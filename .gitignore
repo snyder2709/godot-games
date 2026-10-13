@@ -1,0 +1,17 @@
+# Godot 4 cache and imported binary data
+.godot/
+
+# Build artifacts
+build/
+*.apk
+*.aab
+*.idsig
+
+# Local keystores
+*.keystore
+*.jks
+
+# OS and temporary files
+.DS_Store
+Thumbs.db
+*.tmp

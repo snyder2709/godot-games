@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="28" fill="#87CEEB"/>
+  <circle cx="98" cy="30" r="16" fill="#FFE066" opacity="0.8"/>
+  <!-- Left Ear -->
+  <polygon points="28,62 22,22 54,44" fill="#FF9F43"/>
+  <polygon points="31,56 27,30 48,44" fill="#FF85A2"/>
+  <!-- Right Ear -->
+  <polygon points="100,62 106,22 74,44" fill="#FF9F43"/>
+  <polygon points="97,56 101,30 80,44" fill="#FF85A2"/>
+  <!-- Head -->
+  <ellipse cx="64" cy="74" rx="42" ry="36" fill="#FF9F43"/>
+  <!-- Cheeks -->
+  <circle cx="38" cy="80" r="8" fill="#FF85A2" opacity="0.6"/>
+  <circle cx="90" cy="80" r="8" fill="#FF85A2" opacity="0.6"/>
+  <!-- Eyes -->
+  <circle cx="46" cy="68" r="7" fill="#2D3436"/>
+  <circle cx="44" cy="65" r="2.5" fill="#FFFFFF"/>
+  <circle cx="82" cy="68" r="7" fill="#2D3436"/>
+  <circle cx="80" cy="65" r="2.5" fill="#FFFFFF"/>
+  <!-- Nose & Singing Mouth -->
+  <polygon points="60,76 68,76 64,81" fill="#FF6B81"/>
+  <ellipse cx="64" cy="89" rx="7" ry="8" fill="#D63031"/>
+  <ellipse cx="64" cy="92" rx="5" ry="4" fill="#FF7675"/>
+</svg>
+
