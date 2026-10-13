@@ -67,6 +67,10 @@ func update_fauna(delta: float, world_time: float, water_surface: WaterSurface, 
 		_crab_bounce = maxf(0.0, _crab_bounce - delta * 3.5)
 	if _island_crab != null:
 		_island_crab.position.y = 0.32 + sin(_crab_bounce * PI) * 0.65
+		var crab_sy := 0.45 * (1.0 + sin(_crab_bounce * PI) * 0.5)
+		var crab_sxz := 0.45 * (1.0 - sin(_crab_bounce * PI) * 0.25)
+		_island_crab.scale = Vector3(crab_sxz, crab_sy, crab_sxz)
+
 
 	for f in fishes:
 		var fpos := f.pos

@@ -58,6 +58,9 @@ func update_buoys(delta: float, world_time: float, water_surface: WaterSurface) 
 			0.0,
 			wob.y + cos(world_time * 2.4 + bpos.z) * 6.0
 		)
+		var wob_mag := clampf(wob.length() * 0.015, 0.0, 0.35)
+		b.node.scale = Vector3(1.0 + wob_mag, 1.0 - wob_mag * 0.6, 1.0 + wob_mag)
+
 
 
 func check_girl_collision(girl_pos: Vector3, girl_vel: Vector3) -> Dictionary:

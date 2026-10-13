@@ -107,6 +107,10 @@ func update_surface(delta: float, world_time: float) -> void:
 		var dz := _floating_duck.position.z
 		_floating_duck.position.y = get_wave_height(dx, dz, world_time) + _duck_bounce * 0.55
 		_floating_duck.rotation.y += delta * (6.0 if _duck_bounce > 0.0 else 0.5)
+		var duck_sy := 1.0 + sin(_duck_bounce * PI) * 0.45
+		var duck_sxz := 1.0 - sin(_duck_bounce * PI) * 0.22
+		_floating_duck.scale = Vector3(duck_sxz, duck_sy, duck_sxz)
+
 
 	if _target_ring != null:
 		if _target_ring_timer > 0.0:

@@ -19,6 +19,7 @@ var _buoy_manager: BuoyManager
 var _fauna: MarineFauna
 var _dad: DadActor
 var _girl: GirlController
+var _beach_ball: BeachBall
 
 # Аудиоплееры
 var _splash_player: AudioStreamPlayer
@@ -48,6 +49,7 @@ func _ready() -> void:
 func _setup_modules() -> void:
 	_fx_pool = FXPool.new()
 	add_child(_fx_pool)
+	_fx_pool.bubble_popped.connect(_on_bubble_popped)
 
 	_water_surface = WaterSurface.new()
 	add_child(_water_surface)
@@ -79,12 +81,21 @@ func _setup_modules() -> void:
 	_dad.bubble_tick.connect(_on_dad_bubble_tick)
 	_dad.dad_emerged.connect(_on_dad_emerged)
 
+	_beach_ball = BeachBall.new()
+	add_child(_beach_ball)
+	_beach_ball.init_ball()
+	_beach_ball.ball_kicked.connect(_on_ball_kicked)
+	_beach_ball.ball_splashed.connect(_on_ball_splashed)
+	_beach_ball.ball_bumped.connect(_on_ball_bumped)
+	_beach_ball.dad_passed_ball.connect(_on_dad_passed_ball)
+
 	_girl = GirlController.new()
 	add_child(_girl)
 	_girl.init_controller()
 	_girl.water_sprayed.connect(_on_girl_water_sprayed)
 	_girl.water_hit_dad.connect(_on_water_hit_dad)
 	_girl.foam_spawned.connect(_on_girl_foam_spawned)
+
 
 
 func _setup_environment_and_camera() -> void:
@@ -178,7 +189,11 @@ func _process(delta: float) -> void:
 		_girl.bounce_back(hit["new_pos"], hit["new_vel"])
 		_water_surface.hide_target_ring()
 
-	_girl.update_controller(delta, world_time, _water_surface, _dad.get_pos(), _dad.is_waiting())
+	_beach_ball.update_ball(delta, world_time, _water_surface, _dad.get_pos(), _dad.is_waiting())
+	_beach_ball.check_girl_collision(_girl.girl_pos, _girl.girl_vel)
+
+	_girl.update_controller(delta, world_time, _water_surface, _dad.get_pos(), _dad.is_waiting(), _beach_ball)
+
 
 	# Купание Папы при сближении девочки вплотную
 	if _dad.is_waiting() and _girl.girl_pos.distance_to(_dad.get_pos()) <= 2.45:
@@ -204,6 +219,7 @@ func _on_duck_clicked(duck_pos: Vector3) -> void:
 	_squeak_player.pitch_scale = 1.25
 	_squeak_player.play()
 	_fx_pool.spawn_splash(duck_pos, 10, Color("#FFD32A"))
+	_fx_pool.spawn_ripple(duck_pos, 0.25, 1.5, Color(1.0, 1.0, 1.0, 0.7), 0.45)
 
 
 func _on_buoy_hit(buoy_pos: Vector3, normal: Vector3) -> void:
@@ -213,30 +229,35 @@ func _on_buoy_hit(buoy_pos: Vector3, normal: Vector3) -> void:
 	_boing_player.play()
 	Input.vibrate_handheld(35)
 	_fx_pool.spawn_splash(buoy_pos + normal * 0.8, 10, Color("#E3F9FF"))
+	_fx_pool.spawn_ripple(buoy_pos, 0.35, 1.9, Color(1.0, 1.0, 1.0, 0.75), 0.5)
 
 
 func _on_buoy_clicked(buoy_pos: Vector3) -> void:
 	_bell_player.pitch_scale = randf_range(1.0, 1.25)
 	_bell_player.play()
 	_fx_pool.spawn_splash(buoy_pos, 8, Color("#E3F9FF"))
+	_fx_pool.spawn_ripple(buoy_pos, 0.3, 1.6, Color(1.0, 1.0, 1.0, 0.7), 0.45)
 
 
 func _on_crab_clicked(crab_pos: Vector3) -> void:
 	_tap_player.pitch_scale = randf_range(1.1, 1.3)
 	_tap_player.play()
 	_fx_pool.spawn_splash(crab_pos, 8, Color("#FFEAA7"))
+	_fx_pool.spawn_ripple(crab_pos, 0.2, 1.3, Color(1.0, 1.0, 1.0, 0.6), 0.4)
 
 
 func _on_fish_jumped(fish_pos: Vector3) -> void:
 	_splash_player.pitch_scale = randf_range(1.15, 1.35)
 	_splash_player.play()
 	_fx_pool.spawn_splash(fish_pos, 8, Color("#81D4FA"))
+	_fx_pool.spawn_ripple(fish_pos, 0.25, 1.5, Color(1.0, 1.0, 1.0, 0.7), 0.45)
 
 
 func _on_fish_clicked(fish_pos: Vector3) -> void:
 	_splash_player.pitch_scale = 1.30
 	_splash_player.play()
 	_fx_pool.spawn_splash(fish_pos, 10, Color("#81D4FA"))
+	_fx_pool.spawn_ripple(fish_pos, 0.3, 1.6, Color(1.0, 1.0, 1.0, 0.7), 0.45)
 
 
 func _on_boat_clicked(boat_pos: Vector3, boat_type: String) -> void:
@@ -271,6 +292,7 @@ func _on_dad_splashed() -> void:
 	Input.vibrate_handheld(45)
 
 	_fx_pool.spawn_splash(_dad.get_pos(), 16, Color.WHITE)
+	_fx_pool.spawn_ripple(_dad.get_pos(), 0.4, 2.5, Color(1.0, 1.0, 1.0, 0.8), 0.65)
 	_fx_pool.spawn_splash(_girl.girl_pos + Vector3(0, 1.0, 0), 8, Color("#FFD32A"))
 
 
@@ -294,6 +316,48 @@ func _on_dad_emerged(_hat_idx: int) -> void:
 	_splash_player.pitch_scale = 1.12
 	_splash_player.play()
 	_fx_pool.spawn_splash(_dad.get_pos(), 14, Color("#E3F9FF"))
+	_fx_pool.spawn_ripple(_dad.get_pos(), 0.4, 2.6, Color(1.0, 1.0, 1.0, 0.8), 0.7)
+
+	# Весёлые плавающие мыльные пузыри от Папы
+	for i in range(4):
+		var b_offset := Vector3(randf_range(-0.6, 0.6), 0.75, randf_range(-0.6, 0.6))
+		var b_vel := Vector3(randf_range(-0.35, 0.35), randf_range(0.85, 1.55), randf_range(-0.35, 0.35))
+		_fx_pool.spawn_floating_bubble(_dad.get_pos() + b_offset, b_vel, randf_range(0.20, 0.32))
+
+
+func _on_ball_kicked(pos: Vector3) -> void:
+	_boing_player.pitch_scale = randf_range(1.15, 1.35)
+	_boing_player.play()
+	_fx_pool.spawn_splash(pos, 8, Color("#81D4FA"))
+	_fx_pool.spawn_ripple(pos, 0.25, 1.6, Color(1.0, 1.0, 1.0, 0.75), 0.45)
+
+
+func _on_ball_splashed(pos: Vector3) -> void:
+	_splash_player.pitch_scale = randf_range(1.25, 1.45)
+	_splash_player.play()
+	_fx_pool.spawn_splash(pos, 7, Color.WHITE)
+	_fx_pool.spawn_ripple(pos, 0.3, 1.9, Color(1.0, 1.0, 1.0, 0.7), 0.5)
+
+
+func _on_ball_bumped(pos: Vector3) -> void:
+	_boing_player.pitch_scale = randf_range(0.95, 1.15)
+	_boing_player.play()
+	_fx_pool.spawn_splash(pos, 6, Color("#FFEAA7"))
+	_fx_pool.spawn_ripple(pos, 0.2, 1.4, Color(1.0, 1.0, 1.0, 0.7), 0.4)
+
+
+func _on_dad_passed_ball(pos: Vector3) -> void:
+	_laugh_player.pitch_scale = randf_range(1.05, 1.2)
+	_laugh_player.play()
+	_splash_player.pitch_scale = 1.15
+	_splash_player.play()
+	_fx_pool.spawn_splash(pos, 12, Color.WHITE)
+	_fx_pool.spawn_ripple(pos, 0.35, 2.2, Color(1.0, 1.0, 1.0, 0.8), 0.6)
+
+
+func _on_bubble_popped(pos: Vector3) -> void:
+	_tap_player.pitch_scale = randf_range(1.25, 1.5)
+	_tap_player.play()
 
 
 func _on_girl_water_sprayed(_nozzle_pos: Vector3, _forward_dir: Vector3) -> void:
@@ -314,6 +378,8 @@ func _on_girl_foam_spawned(pos: Vector3) -> void:
 		false,
 		1.0
 	)
+	_fx_pool.spawn_ripple(pos, 0.18, 0.85, Color(1.0, 1.0, 1.0, 0.45), 0.35)
+
 
 
 # --- Обработка ввода (Touch / Mouse) ---
@@ -331,6 +397,14 @@ func _handle_screen_touch(screen_pt: Vector2, is_drag: bool) -> void:
 	# 1. Кнопка "Домик"
 	if not is_drag and screen_pt.distance_to(Vector2(65, 62)) <= 45.0:
 		get_tree().change_scene_to_file("res://scenes/menu.tscn")
+		return
+
+	# 1.5. Лопание летающих мыльных пузырей от Папы
+	if not is_drag and _fx_pool.check_bubble_touch(_camera, screen_pt):
+		return
+
+	# 1.8. Нажатие на надувной пляжный мячик
+	if not is_drag and _beach_ball.check_touch(_camera, screen_pt):
 		return
 
 	# 2. Нажатие на Папу в воде
@@ -375,6 +449,8 @@ func _handle_screen_touch(screen_pt: Vector2, is_drag: bool) -> void:
 		target_pt.z = clampf(target_pt.z, WaterSurface.SEA_MIN_Z, WaterSurface.SEA_MAX_Z)
 		target_pt = _water_surface.push_out_of_islands(target_pt, 1.45)
 
+		_fx_pool.spawn_ripple(target_pt, 0.18, 1.45, Color(0.92, 0.98, 1.0, 0.65), 0.45)
+
 		var is_targeting_dad: bool = _dad.is_waiting() and target_pt.distance_to(_dad.get_pos()) <= 2.4
 		if is_targeting_dad:
 			target_pt = _dad.get_pos()
@@ -382,6 +458,7 @@ func _handle_screen_touch(screen_pt: Vector2, is_drag: bool) -> void:
 		_girl.navigate_to(target_pt, is_targeting_dad)
 		if not is_drag:
 			_water_surface.show_target_ring(target_pt, 0.55)
+
 
 
 func _setup_ui_overlay() -> void:

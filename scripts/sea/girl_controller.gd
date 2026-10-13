@@ -117,13 +117,16 @@ func check_touch(camera: Camera3D, screen_pt: Vector2) -> bool:
 	if camera.is_position_in_frustum(global_position):
 		var girl_screen := camera.unproject_position(global_position + Vector3(0, 0.5, 0))
 		if screen_pt.distance_to(girl_screen) <= 85.0:
+			girl_bounce = 0.85
+			wheel_spin_boost = 1.0
 			fire_water_jet()
 			girl_clicked.emit()
 			return true
 	return false
 
 
-func update_controller(delta: float, world_time: float, water_surface: WaterSurface, dad_pos: Vector3, is_dad_waiting: bool) -> void:
+func update_controller(delta: float, world_time: float, water_surface: WaterSurface, dad_pos: Vector3, is_dad_waiting: bool, beach_ball: BeachBall = null) -> void:
+
 	if wheel_spin_boost > 0.0:
 		wheel_spin_boost = maxf(0.0, wheel_spin_boost - delta * 2.2)
 		wheel_angle += delta * 15.0 * wheel_spin_boost
@@ -209,10 +212,10 @@ func update_controller(delta: float, world_time: float, water_surface: WaterSurf
 		_girl_visual.rotation.z = sin(world_time * 3.0) * 0.07
 		_girl_visual.rotation.x = cos(world_time * 2.6) * 0.06
 
-	_update_water_jets(delta, dad_pos, is_dad_waiting)
+	_update_water_jets(delta, dad_pos, is_dad_waiting, beach_ball)
 
 
-func _update_water_jets(delta: float, dad_pos: Vector3, is_dad_waiting: bool) -> void:
+func _update_water_jets(delta: float, dad_pos: Vector3, is_dad_waiting: bool, beach_ball: BeachBall = null) -> void:
 	for i in range(_active_jets.size() - 1, -1, -1):
 		var jet: WaterJetData = _active_jets[i]
 		jet.life -= delta
@@ -228,6 +231,11 @@ func _update_water_jets(delta: float, dad_pos: Vector3, is_dad_waiting: bool) ->
 				_active_jets.remove_at(i)
 				water_hit_dad.emit()
 				break
+			if beach_ball != null and beach_ball.check_water_jet_hit(pnode.position, jet.vel):
+				pnode.visible = false
+				_active_jets.remove_at(i)
+				break
+
 
 
 
