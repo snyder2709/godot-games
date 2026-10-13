@@ -9,25 +9,24 @@ const SEA_MAX_Z := 6.5
 
 var world_time: float = 0.0
 
-# 3D Камера (комфортный вид от 3-го лица из-за спины без укачивающего вращения горизонта!)
+# 3D Камера (вид от 3-го лица за спиной)
 var _camera: Camera3D
 var _ui_canvas: Node2D
 var _cam_pos := Vector3(0.0, 5.4, 10.2)
 var _cam_look := Vector3(0.0, 0.4, -1.5)
 
-# Шейдеры и текстуры
+# Шейдеры и текстуры палитры Kenney
 var _water_shader_mat: ShaderMaterial
-var _toon_shader: Shader
 var _kenney_colormap: Texture2D
 
-# --- Острова (коллизии для девочки и запретные зоны для появления папы) ---
+# Острова и коллизии
 var islands: Array[Dictionary] = []
 
-# --- Главная героиня: Маленькая девочка в жёлтом круге с рулём ---
+# Главная героиня: Маленькая девочка в спасательном круге с рулём (Kenney character-girl.glb)
 var _girl_root: Node3D
 var _girl_visual: Node3D
+var _girl_anim: AnimationPlayer
 var _wheel_pivot: Node3D
-var _girl_head: Node3D
 var girl_pos := Vector3(0.0, 0.0, 3.2)
 var girl_target := Vector3(0.0, 0.0, 3.2)
 var girl_vel := Vector3.ZERO
@@ -42,11 +41,10 @@ var _foam_cooldown: float = 0.0
 var _target_ring: MeshInstance3D
 var _target_ring_timer: float = 0.0
 
-# --- Папа в 3D-море ---
+# Папа в воде (Kenney character-dad.glb)
 var _dad_root: Node3D
 var _dad_visual: Node3D
-var _dad_left_arm: Node3D
-var _dad_right_arm: Node3D
+var _dad_anim: AnimationPlayer
 var _dad_hats: Array[Node3D] = []
 var dad_pos := Vector3(0.0, 0.0, -2.0)
 var dad_next_pos := Vector3(0.0, 0.0, -2.0)
@@ -56,13 +54,26 @@ var dad_hat_idx: int = 0
 var bubble_trail_pos := Vector3.ZERO
 var _glug_cooldown: float = 0.0
 
-# --- Окружение: Кораблики, Дельфины, Птицы, Уточка ---
+# Морские буйки-бамперы (Kenney buoy.glb, buoy-flag.glb)
+var buoys: Array[Dictionary] = []
+
+# Крабик на пляже (Kenney animal-crab.glb)
+var _island_crab: Node3D
+var _crab_anim: AnimationPlayer
+var _crab_bounce: float = 0.0
+
+# Стайки 3D-рыбок (Kenney animal-fish.glb)
+var fishes: Array[Dictionary] = []
+
+# Окружение: Корабли, Птицы, Уточка, Облака
 var boats: Array[Dictionary] = []
-var dolphins: Array[Dictionary] = []
 var birds: Array[Dictionary] = []
+var clouds: Array[Node3D] = []
 var _floating_duck: Node3D
 var _duck_bounce: float = 0.0
-var dolphin_spawn_timer: float = 1.5
+
+# Водяная пушка / струи брызг
+var water_jets: Array[Dictionary] = []
 
 # 3D Партиклы
 var fx_particles: Array[Dictionary] = []
@@ -75,19 +86,47 @@ var _squeak_player: AudioStreamPlayer
 var _horn_player: AudioStreamPlayer
 var _slide_player: AudioStreamPlayer
 var _glug_player: AudioStreamPlayer
-var _chime_player: AudioStreamPlayer
+var _bell_player: AudioStreamPlayer
+var _boing_player: AudioStreamPlayer
+var _tap_player: AudioStreamPlayer
+var _sea_ambient: AudioStreamPlayer
 
 
 func _ready() -> void:
 	randomize()
 
+	# Инициализация звуков
 	_splash_player = _make_player(SoundGen.get_splash_stream(), 6)
 	_laugh_player = _make_player(SoundGen.get_laugh_stream(), 3)
 	_squeak_player = _make_player(SoundGen.get_squeak_stream(), 4)
 	_horn_player = _make_player(SoundGen.get_boat_horn_stream(), 3)
 	_slide_player = _make_player(SoundGen.get_slide_up_stream(), 4)
 	_glug_player = _make_player(SoundGen.get_glug_stream(), 4)
-	_chime_player = _make_player(SoundGen.get_toy_stream(), 4)
+
+	if ResourceLoader.exists("res://assets/bell.ogg"):
+		_bell_player = _make_player(load("res://assets/bell.ogg"), 4)
+	else:
+		_bell_player = _make_player(SoundGen.get_toy_stream(), 4)
+
+	if ResourceLoader.exists("res://assets/boing.ogg"):
+		_boing_player = _make_player(load("res://assets/boing.ogg"), 4)
+	else:
+		_boing_player = _make_player(SoundGen.get_squeak_stream(), 4)
+
+	if ResourceLoader.exists("res://assets/tap.ogg"):
+		_tap_player = _make_player(load("res://assets/tap.ogg"), 4)
+	else:
+		_tap_player = _make_player(SoundGen.get_pop_stream(), 4)
+
+	# Фоновый морской прибой (тихий ambient)
+	if ResourceLoader.exists("res://assets/sea_ambient.wav"):
+		_sea_ambient = AudioStreamPlayer.new()
+		_sea_ambient.stream = load("res://assets/sea_ambient.wav")
+		if _sea_ambient.stream is AudioStreamWAV:
+			(_sea_ambient.stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
+		_sea_ambient.volume_db = -16.0
+		add_child(_sea_ambient)
+		_sea_ambient.play()
 
 	if ResourceLoader.exists("res://assets/models/Textures/colormap.png"):
 		_kenney_colormap = load("res://assets/models/Textures/colormap.png")
@@ -95,14 +134,18 @@ func _ready() -> void:
 	_sphere_mesh_small = SphereMesh.new()
 	_sphere_mesh_small.radius = 0.14
 	_sphere_mesh_small.height = 0.28
-	_sphere_mesh_small.radial_segments = 16
-	_sphere_mesh_small.rings = 8
+	_sphere_mesh_small.radial_segments = 14
+	_sphere_mesh_small.rings = 7
 
 	_init_shaders()
 	_setup_environment_and_camera()
 	_build_shader_sea_and_islands()
-	_build_girl_in_yellow_ring_3d()
-	_build_dad_3d()
+	_build_clouds_3d()
+	_build_buoys_3d()
+	_build_girl_character_3d()
+	_build_dad_character_3d()
+	_build_island_crab_3d()
+	_build_fish_schools_3d()
 	_build_boats_and_birds_3d()
 	_setup_ui_overlay()
 
@@ -115,7 +158,6 @@ func _make_player(stream: AudioStream, polyphony: int) -> AudioStreamPlayer:
 	return p
 
 
-## Выталкивает точку (девочку или цель клика) за пределы всех островов
 func _push_out_of_islands(pt: Vector3, actor_radius: float) -> Vector3:
 	var res := Vector3(pt.x, 0.0, pt.z)
 	for _pass in range(2):
@@ -135,7 +177,6 @@ func _push_out_of_islands(pt: Vector3, actor_radius: float) -> Vector3:
 	return res
 
 
-## Проверяет, не попадает ли точка или подводный маршрут Папы внутрь острова
 func _is_valid_dad_spawn(from_pt: Vector3, cand: Vector3, margin: float) -> bool:
 	var p2 := Vector2(cand.x, cand.z)
 	var p1 := Vector2(from_pt.x, from_pt.z)
@@ -155,7 +196,6 @@ func _is_valid_dad_spawn(from_pt: Vector3, cand: Vector3, margin: float) -> bool
 	return true
 
 
-## Загружает .glb модель и при необходимости накладывает яркую текстуру палитры Kenney
 func _instantiate_glb(res_path: String, parent: Node3D, pos := Vector3.ZERO, rot_deg := Vector3.ZERO, sc := Vector3.ONE, apply_kenney_tex: bool = false) -> Node3D:
 	if not ResourceLoader.exists(res_path):
 		return null
@@ -181,9 +221,9 @@ func _instantiate_glb(res_path: String, parent: Node3D, pos := Vector3.ZERO, rot
 	return null
 
 
-func _play_glb_anim(node: Node3D, preferred_names: Array[String]) -> void:
+func _play_glb_anim(node: Node3D, preferred_names: Array[String]) -> AnimationPlayer:
 	if node == null:
-		return
+		return null
 	for child in node.find_children("*", "AnimationPlayer", true, false):
 		var ap: AnimationPlayer = child
 		var list := ap.get_animation_list()
@@ -194,13 +234,14 @@ func _play_glb_anim(node: Node3D, preferred_names: Array[String]) -> void:
 					if anim:
 						anim.loop_mode = Animation.LOOP_LINEAR
 					ap.play(anim_name)
-					return
+					return ap
 		if list.size() > 0:
 			var first_anim := ap.get_animation(list[0])
 			if first_anim:
 				first_anim.loop_mode = Animation.LOOP_LINEAR
 			ap.play(list[0])
-			return
+			return ap
+	return null
 
 
 func _init_shaders() -> void:
@@ -223,7 +264,6 @@ void vertex() {
 	VERTEX.y += h;
 	v_wave_h = h;
 
-	// Аналитическая нормаль волны: максимальная скорость на мобильном GPU (без лишних вычислений sin/cos)
 	float d_dx = cos(world_pos.x * 0.8 + TIME * 2.0) * 0.8 * cos(world_pos.z * 0.7 + TIME * 1.6) * 0.12
 	           + cos((world_pos.x + world_pos.z) * 1.3 - TIME * 2.4) * 1.3 * 0.06;
 	float d_dz = -sin(world_pos.x * 0.8 + TIME * 2.0) * sin(world_pos.z * 0.7 + TIME * 1.6) * 0.7 * 0.12
@@ -298,7 +338,6 @@ func _setup_environment_and_camera() -> void:
 	env.ambient_light_color = Color("#FFFDF7")
 	env.ambient_light_energy = 1.05
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
-	# Отключаем Glow (bloom) на мобильных — он сжирает 30-40 кадров/с на полноэкранных FBO-проходах!
 	env.glow_enabled = false
 
 	var world_env := WorldEnvironment.new()
@@ -309,7 +348,6 @@ func _setup_environment_and_camera() -> void:
 	sun.rotation_degrees = Vector3(-48.0, -25.0, 0.0)
 	sun.light_color = Color("#FFF9E6")
 	sun.light_energy = 1.25
-	# Отключаем тяжелые тени на мобильных GPU для плавных 60 FPS
 	sun.shadow_enabled = false
 	add_child(sun)
 
@@ -320,28 +358,23 @@ func _setup_environment_and_camera() -> void:
 
 
 func _build_shader_sea_and_islands() -> void:
-	# Оптимизированная сетка моря: 36x36 полигонов вместо 140x140 снижает нагрузку на мобильный GPU в 15 раз при том же качестве волн!
+	# Оптимизированное море (36x36 полигонов для 60 FPS на Android)
 	var sea_plane := PlaneMesh.new()
 	sea_plane.size = Vector2(90.0, 90.0)
 	sea_plane.subdivide_width = 36
 	sea_plane.subdivide_depth = 36
 	_add_mesh(self, sea_plane, _water_shader_mat, Vector3.ZERO)
 
-	# Просторное море и 3 живописных тропических острова (с точными твёрдыми берегами-коллизиями!)
+	# 3 тропических острова с Kenney-моделями
 	_create_glb_island(Vector3(-10.8, -0.05, -6.5), 3.4, true)
 	_create_glb_island(Vector3(11.0, -0.05, -6.0), 3.5, false)
 	_create_glb_island(Vector3(-0.4, -0.05, -11.8), 3.0, false)
 
-	# Настоящая 3D жёлтая резиновая уточка (duck.glb), плавающая на волнах
+	# Настоящая 3D резиновая уточка (Khronos Duck.glb)
 	_floating_duck = Node3D.new()
 	_floating_duck.position = Vector3(-4.2, 0.0, 1.5)
 	add_child(_floating_duck)
 	_instantiate_glb("res://assets/models/duck.glb", _floating_duck, Vector3(0.0, -0.08, 0.0), Vector3(0.0, 45.0, 0.0), Vector3.ONE * 0.48)
-
-	# Объёмные облака
-	_create_fluffy_cloud(Vector3(-15.0, 10.5, -26.0), 1.4)
-	_create_fluffy_cloud(Vector3(1.5, 11.5, -29.0), 1.7)
-	_create_fluffy_cloud(Vector3(16.0, 10.0, -25.0), 1.3)
 
 	# Кольцо-цель на воде
 	var ring_mesh := TorusMesh.new()
@@ -355,7 +388,6 @@ func _build_shader_sea_and_islands() -> void:
 
 
 func _create_glb_island(pos: Vector3, radius: float, with_tower: bool) -> void:
-	# Регистрируем остров в списке коллизий (с запасом под береговую линию)
 	islands.append({
 		"pos": Vector3(pos.x, 0.0, pos.z),
 		"radius": radius + 0.25
@@ -365,28 +397,22 @@ func _create_glb_island(pos: Vector3, radius: float, with_tower: bool) -> void:
 	isl.position = pos
 	add_child(isl)
 
-	# Песчаный купол острова (строго радиуса radius)
+	# Песчаный купол острова
 	var sand_dome := SphereMesh.new()
 	sand_dome.radius = radius
 	sand_dome.height = radius * 0.52
 	_add_mesh(isl, sand_dome, _make_toon_mat(Color("#FFEAA7"), 0.75), Vector3(0.0, 0.05, 0.0))
 
-	# Прибойная пена вокруг берега острова
+	# Пена вокруг берега
 	var shore_foam := TorusMesh.new()
 	shore_foam.inner_radius = radius * 0.90
 	shore_foam.outer_radius = radius * 1.05
 	_add_mesh(isl, shore_foam, _make_unshaded_mat(Color(1.0, 1.0, 1.0, 0.55)), Vector3(0.0, 0.06, 0.0))
 
-	# Внимание: родной размер patch-sand-foliage.glb равен ±3.87 по X и ±3.02 по Z!
-	# Масштабируем так, чтобы листва и песок идеально помещались ВНУТРИ радиуса острова!
 	var patch_scale := (radius * 0.78) / 3.87
 	_instantiate_glb("res://assets/models/patch-sand-foliage.glb", isl, Vector3(0.0, 0.36, 0.0), Vector3.ZERO, Vector3.ONE * patch_scale, true)
-
-	# Родной размер пальм ~4.25 в высоту, ставим масштаб ~1.05 внутри острова
 	_instantiate_glb("res://assets/models/palm-detailed-bend.glb", isl, Vector3(-radius * 0.30, 0.42, 0.15), Vector3(0.0, 35.0, 0.0), Vector3.ONE * 1.08, true)
 	_instantiate_glb("res://assets/models/palm-detailed-straight.glb", isl, Vector3(radius * 0.28, 0.42, -0.25), Vector3(0.0, -60.0, 0.0), Vector3.ONE * 1.02, true)
-
-	# Родной размер rocks-sand-a.glb равен ±2.70! Масштабируем до 0.45, чтобы камни не вылезали за край острова!
 	_instantiate_glb("res://assets/models/rocks-sand-a.glb", isl, Vector3(radius * 0.36, 0.22, radius * 0.24), Vector3(0.0, 120.0, 0.0), Vector3.ONE * 0.45, true)
 
 	if with_tower:
@@ -394,28 +420,52 @@ func _create_glb_island(pos: Vector3, radius: float, with_tower: bool) -> void:
 		_instantiate_glb("res://assets/models/chest.glb", isl, Vector3(-0.65, 0.52, 0.75), Vector3(0.0, 15.0, 0.0), Vector3.ONE * 0.90, true)
 		var boat_offset := Vector3(radius * 0.88, 0.06, radius * 0.45)
 		_instantiate_glb("res://assets/models/boat-row-small.glb", isl, boat_offset, Vector3(0.0, 45.0, 0.0), Vector3.ONE * 0.95, true)
-		# Коллизия для пришвартованной у берега лодки
 		islands.append({
 			"pos": Vector3(pos.x + boat_offset.x, 0.0, pos.z + boat_offset.z),
 			"radius": 1.25
 		})
 
 
-func _create_fluffy_cloud(pos: Vector3, sc: float) -> void:
-	var cl := Node3D.new()
-	cl.position = pos
-	cl.scale = Vector3.ONE * sc
-	add_child(cl)
-	var cmat := _make_unshaded_mat(Color(1.0, 1.0, 1.0, 0.92))
-	var sph := SphereMesh.new()
-	sph.radius = 1.4
-	sph.height = 2.2
-	_add_mesh(cl, sph, cmat, Vector3.ZERO)
-	_add_mesh(cl, sph, cmat, Vector3(-1.3, -0.2, 0.2), Vector3.ZERO, Vector3.ONE * 0.75)
-	_add_mesh(cl, sph, cmat, Vector3(1.3, -0.15, -0.1), Vector3.ZERO, Vector3.ONE * 0.8)
+func _build_clouds_3d() -> void:
+	# 4 готовых 3D-облака Kenney (cloud.glb) плывут по небу
+	var cloud_configs = [
+		{"pos": Vector3(-16.0, 10.5, -27.0), "sc": 3.6, "speed": 0.45},
+		{"pos": Vector3(2.0, 12.0, -30.0), "sc": 4.2, "speed": 0.38},
+		{"pos": Vector3(18.0, 11.0, -26.0), "sc": 3.4, "speed": 0.52},
+		{"pos": Vector3(-8.0, 13.5, -29.0), "sc": 3.8, "speed": 0.40}
+	]
+	for c in cloud_configs:
+		var cnode := Node3D.new()
+		cnode.position = c["pos"]
+		add_child(cnode)
+		_instantiate_glb("res://assets/models/cloud.glb", cnode, Vector3.ZERO, Vector3.ZERO, Vector3.ONE * c["sc"], true)
+		cnode.set_meta("speed", c["speed"])
+		clouds.append(cnode)
 
 
-func _build_girl_in_yellow_ring_3d() -> void:
+func _build_buoys_3d() -> void:
+	# 4 морских буйка-бампера (Kenney buoy.glb, buoy-flag.glb)
+	var buoy_positions = [
+		{"path": "res://assets/models/buoy-flag.glb", "pos": Vector3(4.5, 0.0, -4.5), "sc": 0.58},
+		{"path": "res://assets/models/buoy.glb", "pos": Vector3(-5.2, 0.0, -3.8), "sc": 0.55},
+		{"path": "res://assets/models/buoy.glb", "pos": Vector3(1.8, 0.0, -8.2), "sc": 0.55},
+		{"path": "res://assets/models/buoy-flag.glb", "pos": Vector3(-7.5, 0.0, 0.5), "sc": 0.58}
+	]
+	for b in buoy_positions:
+		var bnode := Node3D.new()
+		bnode.position = b["pos"]
+		add_child(bnode)
+		_instantiate_glb(b["path"], bnode, Vector3.ZERO, Vector3.ZERO, Vector3.ONE * b["sc"], true)
+		buoys.append({
+			"node": bnode,
+			"pos": b["pos"],
+			"wobble": Vector2.ZERO,
+			"wobble_vel": Vector2.ZERO,
+			"radius": 1.05
+		})
+
+
+func _build_girl_character_3d() -> void:
 	_girl_root = Node3D.new()
 	_girl_root.position = girl_pos
 	add_child(_girl_root)
@@ -424,228 +474,78 @@ func _build_girl_in_yellow_ring_3d() -> void:
 	_girl_visual.rotation.y = girl_yaw
 	_girl_root.add_child(_girl_visual)
 
-	# 1. ГЛЯНЦЕВЫЙ ЖЁЛТЫЙ ДЕТСКИЙ КРУГ С БОКОВЫМИ РУЧКАМИ
+	# 1. Жёлтый детский спасательный круг
 	var ring_torus := TorusMesh.new()
-	ring_torus.inner_radius = 0.50
-	ring_torus.outer_radius = 1.15
-	ring_torus.rings = 64
-	ring_torus.ring_segments = 36
+	ring_torus.inner_radius = 0.52
+	ring_torus.outer_radius = 1.18
+	ring_torus.rings = 48
+	ring_torus.ring_segments = 24
 	var yellow_mat := _make_toon_mat(Color("#FFD32A"), 0.12)
 	_add_mesh(_girl_visual, ring_torus, yellow_mat, Vector3(0.0, 0.14, 0.0))
 
+	# Ручки круга
 	var handle_torus := TorusMesh.new()
 	handle_torus.inner_radius = 0.08
 	handle_torus.outer_radius = 0.18
 	var orange_mat := _make_toon_mat(Color("#FF9F43"), 0.25)
-	_add_mesh(_girl_visual, handle_torus, orange_mat, Vector3(-0.82, 0.42, -0.1), Vector3(0, 0, 25))
-	_add_mesh(_girl_visual, handle_torus, orange_mat, Vector3(0.82, 0.42, -0.1), Vector3(0, 0, -25))
+	_add_mesh(_girl_visual, handle_torus, orange_mat, Vector3(-0.84, 0.42, -0.1), Vector3(0, 0, 25))
+	_add_mesh(_girl_visual, handle_torus, orange_mat, Vector3(0.84, 0.42, -0.1), Vector3(0, 0, -25))
 
-	# 2. ДЕТСКИЙ РУЛЬ НА КРУГЕ С КРАСНОЙ КНОПКОЙ-БИБИПКОЙ
+	# 2. Настоящий анимированный 3D-персонаж девочки (Kenney character-girl.glb)
+	# Посажена в спасательный круг, руки держат руль в анимации 'drive'
+	var girl_model := _instantiate_glb("res://assets/models/character-girl.glb", _girl_visual, Vector3(0.0, 0.04, -0.12), Vector3(0.0, 180.0, 0.0), Vector3.ONE * 0.22)
+	_girl_anim = _play_glb_anim(girl_model, ["drive", "sit", "idle"])
+
+	# 3. Детский руль с красной кнопкой-бибипкой и соплом водяной брызгалки
 	var col_mount := Node3D.new()
-	col_mount.position = Vector3(0.0, 0.44, 0.76)
+	col_mount.position = Vector3(0.0, 0.42, 0.72)
 	col_mount.rotation_degrees = Vector3(-38.0, 0.0, 0.0)
 	_girl_visual.add_child(col_mount)
 
 	var dashboard := SphereMesh.new()
-	dashboard.radius = 0.22
-	dashboard.height = 0.30
+	dashboard.radius = 0.20
+	dashboard.height = 0.28
 	_add_mesh(col_mount, dashboard, orange_mat, Vector3.ZERO)
 
 	var stem := CylinderMesh.new()
 	stem.top_radius = 0.07
 	stem.bottom_radius = 0.09
-	stem.height = 0.38
+	stem.height = 0.36
 	_add_mesh(col_mount, stem, _make_toon_mat(Color("#0984E3"), 0.2), Vector3(0.0, 0.18, 0.0))
 
 	_wheel_pivot = Node3D.new()
-	_wheel_pivot.position = Vector3(0.0, 0.38, 0.0)
+	_wheel_pivot.position = Vector3(0.0, 0.36, 0.0)
 	col_mount.add_child(_wheel_pivot)
 
 	var wheel_torus := TorusMesh.new()
-	wheel_torus.inner_radius = 0.26
+	wheel_torus.inner_radius = 0.25
 	wheel_torus.outer_radius = 0.38
-	wheel_torus.rings = 48
-	wheel_torus.ring_segments = 24
+	wheel_torus.rings = 36
+	wheel_torus.ring_segments = 18
 	_add_mesh(_wheel_pivot, wheel_torus, _make_toon_mat(Color("#0984E3"), 0.15), Vector3.ZERO)
 
 	var spoke := CapsuleMesh.new()
 	spoke.radius = 0.04
-	spoke.height = 0.62
+	spoke.height = 0.60
 	var light_blue := _make_toon_mat(Color("#48DBFB"), 0.2)
 	_add_mesh(_wheel_pivot, spoke, light_blue, Vector3.ZERO, Vector3(0, 0, 90))
 	_add_mesh(_wheel_pivot, spoke, light_blue, Vector3.ZERO, Vector3(90, 0, 0))
 
+	# Красная кнопка-бибипка (водяная пушка!)
 	var horn_btn := SphereMesh.new()
 	horn_btn.radius = 0.13
 	horn_btn.height = 0.20
 	_add_mesh(_wheel_pivot, horn_btn, _make_toon_mat(Color("#FF3F34"), 0.15), Vector3(0.0, 0.04, 0.0))
 
-	# 3. МИЛАЯ СВЕТЛОВОЛОСАЯ ДЕВОЧКА С ВЫРАЗИТЕЛЬНЫМ 3D-ЛИЧИКОМ В ПАНАМКЕ
-	var skin_mat := _make_toon_mat(Color("#FFE0CC"), 0.36)
-	var suit_mat := _make_toon_mat(Color("#FF6B81"), 0.32)
-	# Светлые золотисто-пшеничные волосы (блонд!)
-	var hair_mat := _make_toon_mat(Color("#FDE073"), 0.32)
-	var brow_mat := _make_toon_mat(Color("#D4A038"), 0.38)
-	var hat_mat := _make_toon_mat(Color("#FFFDF2"), 0.45)
-
-	var torso := CapsuleMesh.new()
-	torso.radius = 0.36
-	torso.height = 0.85
-	_add_mesh(_girl_visual, torso, suit_mat, Vector3(0.0, 0.42, -0.04))
-
-	var arm_mesh := CapsuleMesh.new()
-	arm_mesh.radius = 0.105
-	arm_mesh.height = 0.60
-	_add_mesh(_girl_visual, arm_mesh, skin_mat, Vector3(-0.30, 0.56, 0.30), Vector3(68.0, -20.0, 0.0))
-	_add_mesh(_girl_visual, arm_mesh, skin_mat, Vector3(0.30, 0.56, 0.30), Vector3(68.0, 20.0, 0.0))
-
-	var hand_sph := SphereMesh.new()
-	hand_sph.radius = 0.12
-	hand_sph.height = 0.24
-	_add_mesh(_girl_visual, hand_sph, skin_mat, Vector3(-0.26, 0.66, 0.56))
-	_add_mesh(_girl_visual, hand_sph, skin_mat, Vector3(0.26, 0.66, 0.56))
-
-	_girl_head = Node3D.new()
-	_girl_head.position = Vector3(0.0, 1.06, -0.04)
-	_girl_visual.add_child(_girl_head)
-
-	var head_sph := SphereMesh.new()
-	head_sph.radius = 0.44
-	head_sph.height = 0.88
-	head_sph.radial_segments = 32
-	head_sph.rings = 16
-	_add_mesh(_girl_head, head_sph, skin_mat)
-
-	# Маленькие аккуратные ушки по бокам головы
-	var ear_sph := SphereMesh.new()
-	ear_sph.radius = 0.10
-	ear_sph.height = 0.20
-	_add_mesh(_girl_head, ear_sph, skin_mat, Vector3(-0.42, -0.02, 0.02))
-	_add_mesh(_girl_head, ear_sph, skin_mat, Vector3(0.42, -0.02, 0.02))
-
-	# --- ВЫРАЗИТЕЛЬНОЕ 3D-ЛИЧИКО ДЕВОЧКИ (смотрит вперёд по +Z, к рулю!) ---
-	var white_mat := _make_toon_mat(Color.WHITE, 0.12)
-	var iris_mat := _make_toon_mat(Color("#0984E3"), 0.15)
-	var pupil_mat := _make_toon_mat(Color("#1E272E"), 0.10)
-	var spark_mat := _make_unshaded_mat(Color.WHITE)
-	var cheek_mat := _make_toon_mat(Color("#FF8FA3"), 0.35)
-	var nose_mat := _make_toon_mat(Color("#FFCCB3"), 0.35)
-	var mouth_mat := _make_toon_mat(Color("#D63031"), 0.28)
-	var tongue_mat := _make_toon_mat(Color("#FF7675"), 0.30)
-
-	var sclera_mesh := SphereMesh.new()
-	sclera_mesh.radius = 0.098
-	sclera_mesh.height = 0.196
-	var iris_mesh := SphereMesh.new()
-	iris_mesh.radius = 0.068
-	iris_mesh.height = 0.136
-	var pupil_mesh := SphereMesh.new()
-	pupil_mesh.radius = 0.045
-	pupil_mesh.height = 0.09
-	var spark_mesh := SphereMesh.new()
-	spark_mesh.radius = 0.022
-	spark_mesh.height = 0.044
-	var brow_mesh := CapsuleMesh.new()
-	brow_mesh.radius = 0.020
-	brow_mesh.height = 0.13
-	var cheek_mesh := SphereMesh.new()
-	cheek_mesh.radius = 0.082
-	cheek_mesh.height = 0.13
-
-	for side in [-1.0, 1.0]:
-		# Белок глаза, голубая радужка, зрачок и живой белый блик
-		_add_mesh(_girl_head, sclera_mesh, white_mat, Vector3(side * 0.155, 0.03, 0.365), Vector3.ZERO, Vector3(1.0, 1.08, 0.65))
-		_add_mesh(_girl_head, iris_mesh, iris_mat, Vector3(side * 0.155, 0.03, 0.405), Vector3.ZERO, Vector3(1.0, 1.05, 0.65))
-		_add_mesh(_girl_head, pupil_mesh, pupil_mat, Vector3(side * 0.155, 0.03, 0.428), Vector3.ZERO, Vector3(1.0, 1.05, 0.65))
-		_add_mesh(_girl_head, spark_mesh, spark_mat, Vector3(side * 0.132, 0.068, 0.452))
-		# Бровки домиком
-		_add_mesh(_girl_head, brow_mesh, brow_mat, Vector3(side * 0.155, 0.155, 0.39), Vector3(0.0, 0.0, 90.0 - side * 12.0))
-		# Румяные розовые щёчки
-		_add_mesh(_girl_head, cheek_mesh, cheek_mat, Vector3(side * 0.255, -0.065, 0.345), Vector3.ZERO, Vector3(1.15, 0.85, 0.65))
-
-	# Курносый детский носик-кнопочка
-	var nose_mesh := SphereMesh.new()
-	nose_mesh.radius = 0.062
-	nose_mesh.height = 0.12
-	_add_mesh(_girl_head, nose_mesh, nose_mat, Vector3(0.0, -0.035, 0.435))
-
-	# Радостная 3D-улыбка с язычком и зубками
-	var smile_mesh := SphereMesh.new()
-	smile_mesh.radius = 0.105
-	smile_mesh.height = 0.14
-	_add_mesh(_girl_head, smile_mesh, mouth_mat, Vector3(0.0, -0.16, 0.395), Vector3.ZERO, Vector3(1.25, 0.82, 0.55))
-
-	var tongue_mesh := SphereMesh.new()
-	tongue_mesh.radius = 0.058
-	tongue_mesh.height = 0.08
-	_add_mesh(_girl_head, tongue_mesh, tongue_mat, Vector3(0.0, -0.188, 0.418), Vector3.ZERO, Vector3(1.15, 0.65, 0.60))
-
-	var teeth_mesh := SphereMesh.new()
-	teeth_mesh.radius = 0.055
-	teeth_mesh.height = 0.05
-	_add_mesh(_girl_head, teeth_mesh, white_mat, Vector3(0.0, -0.125, 0.422), Vector3.ZERO, Vector3(1.35, 0.48, 0.50))
-
-	# --- СВЕТЛЫЕ ЗОЛОТИСТЫЕ ВОЛОСЫ: причёска, пышная чёлка спереди, локоны и 2 хвостика ---
-	var hair_cap := SphereMesh.new()
-	hair_cap.radius = 0.455
-	hair_cap.height = 0.86
-	_add_mesh(_girl_head, hair_cap, hair_mat, Vector3(0.0, 0.07, -0.06))
-
-	# Пышная светлая чёлка на лбу (чтобы спереди было хорошо видно светлые волосы!)
-	var bang_center := CapsuleMesh.new()
-	bang_center.radius = 0.095
-	bang_center.height = 0.34
-	_add_mesh(_girl_head, bang_center, hair_mat, Vector3(0.0, 0.23, 0.35), Vector3(12.0, 0.0, 90.0))
-
-	var bang_side := CapsuleMesh.new()
-	bang_side.radius = 0.085
-	bang_side.height = 0.26
-	_add_mesh(_girl_head, bang_side, hair_mat, Vector3(-0.19, 0.20, 0.32), Vector3(15.0, -24.0, 68.0))
-	_add_mesh(_girl_head, bang_side, hair_mat, Vector3(0.19, 0.20, 0.32), Vector3(15.0, 24.0, -68.0))
-
-	# Боковые светлые прядки-локоны у щёчек
-	var side_lock := CapsuleMesh.new()
-	side_lock.radius = 0.08
-	side_lock.height = 0.32
-	for side in [-1.0, 1.0]:
-		_add_mesh(_girl_head, side_lock, hair_mat, Vector3(side * 0.36, 0.02, 0.20), Vector3(-12.0, 0.0, -side * 14.0))
-
-	# Два пышных светлых хвостика с розовыми бантиками
-	for side in [-1.0, 1.0]:
-		var pt_pivot := Node3D.new()
-		pt_pivot.position = Vector3(side * 0.43, 0.06, -0.14)
-		_girl_head.add_child(pt_pivot)
-
-		var bow_sph := SphereMesh.new()
-		bow_sph.radius = 0.13
-		bow_sph.height = 0.22
-		_add_mesh(pt_pivot, bow_sph, suit_mat, Vector3(0.0, 0.06, 0.0))
-
-		var tail_caps := CapsuleMesh.new()
-		tail_caps.radius = 0.18
-		tail_caps.height = 0.52
-		_add_mesh(pt_pivot, tail_caps, hair_mat, Vector3(side * 0.15, -0.07, -0.06), Vector3(18.0, 0.0, -side * 40.0))
-
-	# Летняя панамка чуть сдвинута на макушку, чтобы открывать светлую чёлку и личико
-	var brim := CylinderMesh.new()
-	brim.top_radius = 0.60
-	brim.bottom_radius = 0.66
-	brim.height = 0.07
-	brim.radial_segments = 32
-	_add_mesh(_girl_head, brim, hat_mat, Vector3(0.0, 0.34, -0.05), Vector3(-18.0, 0.0, 0.0))
-
-	var crown_hat := SphereMesh.new()
-	crown_hat.radius = 0.42
-	crown_hat.height = 0.50
-	_add_mesh(_girl_head, crown_hat, hat_mat, Vector3(0.0, 0.42, -0.07), Vector3(-18.0, 0.0, 0.0))
-
-	var ribbon := TorusMesh.new()
-	ribbon.inner_radius = 0.35
-	ribbon.outer_radius = 0.44
-	_add_mesh(_girl_head, ribbon, suit_mat, Vector3(0.0, 0.38, -0.06), Vector3(-18.0, 0.0, 0.0))
+	# Сопло водяной пушки на передке круга
+	var nozzle := CylinderMesh.new()
+	nozzle.top_radius = 0.05
+	nozzle.bottom_radius = 0.07
+	nozzle.height = 0.18
+	_add_mesh(_girl_visual, nozzle, _make_toon_mat(Color("#00CEC9"), 0.2), Vector3(0.0, 0.30, 1.15), Vector3(90.0, 0.0, 0.0))
 
 
-func _build_dad_3d() -> void:
+func _build_dad_character_3d() -> void:
 	_dad_root = Node3D.new()
 	_dad_root.position = dad_pos
 	add_child(_dad_root)
@@ -653,183 +553,140 @@ func _build_dad_3d() -> void:
 	_dad_visual = Node3D.new()
 	_dad_root.add_child(_dad_visual)
 
-	var skin_mat := _make_toon_mat(Color("#FFD3B6"), 0.38)
-	var hair_mat := _make_toon_mat(Color("#4E342E"), 0.48)
-	var vest_mat := _make_toon_mat(Color("#00CEC9"), 0.35)
-
-	# Пенный круг вокруг папы
+	# Пенный круг вокруг Папы в воде
 	var foam_ring := TorusMesh.new()
 	foam_ring.inner_radius = 0.78
-	foam_ring.outer_radius = 1.04
+	foam_ring.outer_radius = 1.08
 	_add_mesh(_dad_visual, foam_ring, _make_unshaded_mat(Color(1, 1, 1, 0.55)), Vector3(0.0, 0.05, 0.0))
 
-	var shoulders := CapsuleMesh.new()
-	shoulders.radius = 0.52
-	shoulders.height = 1.55
-	_add_mesh(_dad_visual, shoulders, skin_mat, Vector3(0.0, 0.32, 0.0), Vector3(0, 0, 90))
-	_add_mesh(_dad_visual, shoulders, vest_mat, Vector3(0.0, -0.08, 0.0), Vector3(0, 0, 90))
+	# Настоящая 3D-модель Папы (Kenney character-dad.glb)
+	var dad_model := _instantiate_glb("res://assets/models/character-dad.glb", _dad_visual, Vector3(0.0, -0.32, 0.0), Vector3.ZERO, Vector3.ONE * 0.26)
+	_dad_anim = _play_glb_anim(dad_model, ["emote-yes", "idle"])
 
-	_dad_left_arm = Node3D.new()
-	_dad_left_arm.position = Vector3(-0.68, 0.48, 0.0)
-	_dad_visual.add_child(_dad_left_arm)
-
-	_dad_right_arm = Node3D.new()
-	_dad_right_arm.position = Vector3(0.68, 0.48, 0.0)
-	_dad_visual.add_child(_dad_right_arm)
-
-	var arm_caps := CapsuleMesh.new()
-	arm_caps.radius = 0.16
-	arm_caps.height = 0.92
-	var palm_sph := SphereMesh.new()
-	palm_sph.radius = 0.19
-	palm_sph.height = 0.38
-
-	_add_mesh(_dad_left_arm, arm_caps, skin_mat, Vector3(-0.28, 0.38, 0.0), Vector3(0, 0, 32))
-	_add_mesh(_dad_left_arm, palm_sph, skin_mat, Vector3(-0.50, 0.72, 0.0))
-
-	_add_mesh(_dad_right_arm, arm_caps, skin_mat, Vector3(0.28, 0.38, 0.0), Vector3(0, 0, -32))
-	_add_mesh(_dad_right_arm, palm_sph, skin_mat, Vector3(0.50, 0.72, 0.0))
-
-	var head := Node3D.new()
-	head.position = Vector3(0.0, 1.18, 0.0)
-	_dad_visual.add_child(head)
-
-	var head_sph := SphereMesh.new()
-	head_sph.radius = 0.54
-	head_sph.height = 1.08
-	head_sph.radial_segments = 32
-	head_sph.rings = 16
-	_add_mesh(head, head_sph, skin_mat)
-
-	var ear_sph := SphereMesh.new()
-	ear_sph.radius = 0.14
-	ear_sph.height = 0.28
-	_add_mesh(head, ear_sph, skin_mat, Vector3(-0.52, 0.0, 0.0))
-	_add_mesh(head, ear_sph, skin_mat, Vector3(0.52, 0.0, 0.0))
-
-	var hair_top := SphereMesh.new()
-	hair_top.radius = 0.55
-	hair_top.height = 0.90
-	_add_mesh(head, hair_top, hair_mat, Vector3(0.0, 0.18, -0.08))
-
-	# --- ГУСТАЯ ОБЪЁМНАЯ 3D-БОРОДА ПАПЫ (окладистая борода + бакенбарды + усы) ---
-	var beard_main := SphereMesh.new()
-	beard_main.radius = 0.49
-	beard_main.height = 0.72
-	beard_main.radial_segments = 28
-	beard_main.rings = 14
-	_add_mesh(head, beard_main, hair_mat, Vector3(0.0, -0.22, 0.14), Vector3.ZERO, Vector3(1.06, 0.96, 1.04))
-
-	var beard_chin := SphereMesh.new()
-	beard_chin.radius = 0.36
-	beard_chin.height = 0.56
-	_add_mesh(head, beard_chin, hair_mat, Vector3(0.0, -0.35, 0.30), Vector3.ZERO, Vector3(1.12, 0.92, 0.96))
-
-	var sideburn_mesh := CapsuleMesh.new()
-	sideburn_mesh.radius = 0.16
-	sideburn_mesh.height = 0.54
-	for side in [-1.0, 1.0]:
-		_add_mesh(head, sideburn_mesh, hair_mat, Vector3(side * 0.40, -0.08, 0.22), Vector3(18.0, 0.0, side * 16.0))
-
-	var mustache := CapsuleMesh.new()
-	mustache.radius = 0.09
-	mustache.height = 0.54
-	_add_mesh(head, mustache, hair_mat, Vector3(0.0, -0.09, 0.49), Vector3(0, 0, 90))
-
-	var white_eye := SphereMesh.new()
-	white_eye.radius = 0.12
-	white_eye.height = 0.24
-	var pupil := SphereMesh.new()
-	pupil.radius = 0.065
-	pupil.height = 0.13
-	var white_mat := _make_toon_mat(Color.WHITE, 0.15)
-	var dark_mat := _make_toon_mat(Color("#2D3436"), 0.15)
-
-	for side in [-1.0, 1.0]:
-		_add_mesh(head, white_eye, white_mat, Vector3(side * 0.20, 0.08, 0.45))
-		_add_mesh(head, pupil, dark_mat, Vector3(side * 0.20, 0.08, 0.53))
-
-	var nose := SphereMesh.new()
-	nose.radius = 0.11
-	nose.height = 0.22
-	_add_mesh(head, nose, _make_toon_mat(Color("#FFBEA3"), 0.4), Vector3(0.0, -0.01, 0.55))
-
-	# Радостная улыбка папы посреди бороды
-	var mouth := SphereMesh.new()
-	mouth.radius = 0.16
-	mouth.height = 0.20
-	_add_mesh(head, mouth, _make_toon_mat(Color("#FF5252"), 0.28), Vector3(0.0, -0.21, 0.50), Vector3.ZERO, Vector3(1.15, 0.85, 0.75))
-
-	var goggle_ring := TorusMesh.new()
-	goggle_ring.inner_radius = 0.09
-	goggle_ring.outer_radius = 0.16
-	var goggle_mat := _make_toon_mat(Color("#FF9F43"), 0.2)
-	_add_mesh(head, goggle_ring, goggle_mat, Vector3(-0.20, 0.32, 0.42), Vector3(75, 0, 0))
-	_add_mesh(head, goggle_ring, goggle_mat, Vector3(0.20, 0.32, 0.42), Vector3(75, 0, 0))
-
-	# --- СЮРПРИЗЫ НА ГОЛОВЕ У ПАПЫ ПОСЛЕ ВЫНЫРИВАНИЯ (включая настоящие GLB!) ---
+	# Сюрпризы на голове у Папы после выныривания (100% настоящие 3D-модели!)
 	var hats_root := Node3D.new()
-	hats_root.position = Vector3(0.0, 0.62, 0.0)
-	head.add_child(hats_root)
+	hats_root.position = Vector3(0.0, 1.62, 0.0)
+	_dad_visual.add_child(hats_root)
 
-	# 1. Настоящая 3D резиновая уточка (duck.glb)
+	# 1. Резиновая уточка (Khronos Duck.glb)
 	var hat_duck := Node3D.new()
 	hat_duck.visible = false
 	hats_root.add_child(hat_duck)
-	_instantiate_glb("res://assets/models/duck.glb", hat_duck, Vector3(0.0, -0.05, 0.0), Vector3(0.0, 90.0, 0.0), Vector3.ONE * 0.34)
+	_instantiate_glb("res://assets/models/duck.glb", hat_duck, Vector3(0.0, -0.05, 0.0), Vector3(0.0, 90.0, 0.0), Vector3.ONE * 0.35)
 	_dad_hats.append(hat_duck)
 
-	# 2. Настоящий 3D сундук сокровищ (chest.glb с текстурой)
+	# 2. Сундук с сокровищами (Kenney chest.glb)
 	var hat_chest := Node3D.new()
 	hat_chest.visible = false
 	hats_root.add_child(hat_chest)
-	_instantiate_glb("res://assets/models/chest.glb", hat_chest, Vector3.ZERO, Vector3.ZERO, Vector3.ONE * 0.85, true)
+	_instantiate_glb("res://assets/models/chest.glb", hat_chest, Vector3.ZERO, Vector3.ZERO, Vector3.ONE * 0.82, true)
 	_dad_hats.append(hat_chest)
 
-	# 3. Красная морская звезда
-	var hat_star := Node3D.new()
-	hat_star.visible = false
-	hats_root.add_child(hat_star)
-	var star_arm := CapsuleMesh.new()
-	star_arm.radius = 0.11
-	star_arm.height = 0.85
-	var star_mat := _make_toon_mat(Color("#FF5252"), 0.3)
-	for i in range(5):
-		_add_mesh(hat_star, star_arm, star_mat, Vector3.ZERO, Vector3(90.0, float(i) * 36.0, 0.0))
-	_dad_hats.append(hat_star)
+	# 3. Живой крабик на голове (Kenney animal-crab.glb)
+	var hat_crab := Node3D.new()
+	hat_crab.visible = false
+	hats_root.add_child(hat_crab)
+	var cr_inst := _instantiate_glb("res://assets/models/animal-crab.glb", hat_crab, Vector3(0.0, 0.08, 0.0), Vector3.ZERO, Vector3.ONE * 0.32, true)
+	_play_glb_anim(cr_inst, ["dance", "idle"])
+	_dad_hats.append(hat_crab)
+
+	# 4. Яркая рыбка на голове (Kenney animal-fish.glb)
+	var hat_fish := Node3D.new()
+	hat_fish.visible = false
+	hats_root.add_child(hat_fish)
+	var fi_inst := _instantiate_glb("res://assets/models/animal-fish.glb", hat_fish, Vector3(0.0, 0.06, 0.0), Vector3(0.0, 90.0, 0.0), Vector3.ONE * 0.32, true)
+	_play_glb_anim(fi_inst, ["dance", "idle"])
+	_dad_hats.append(hat_fish)
+
+	# 5. Полосатый морской буёк (Kenney buoy.glb)
+	var hat_buoy := Node3D.new()
+	hat_buoy.visible = false
+	hats_root.add_child(hat_buoy)
+	_instantiate_glb("res://assets/models/buoy.glb", hat_buoy, Vector3(0.0, -0.05, 0.0), Vector3.ZERO, Vector3.ONE * 0.32, true)
+	_dad_hats.append(hat_buoy)
+
+
+func _build_island_crab_3d() -> void:
+	# Анимированный крабик на песчаном берегу острова возле лодки
+	_island_crab = Node3D.new()
+	_island_crab.position = Vector3(-9.2, 0.32, -5.6)
+	add_child(_island_crab)
+	var crab_inst := _instantiate_glb("res://assets/models/animal-crab.glb", _island_crab, Vector3.ZERO, Vector3(0.0, 35.0, 0.0), Vector3.ONE * 0.38, true)
+	_crab_anim = _play_glb_anim(crab_inst, ["idle", "walk"])
+
+
+func _build_fish_schools_3d() -> void:
+	# Стайки анимированных рыбок в море (Kenney animal-fish.glb)
+	var fish_spawns = [
+		{"pos": Vector3(-4.5, 0.0, -1.0), "dir": Vector3(1, 0, 0.2).normalized(), "speed": 1.4},
+		{"pos": Vector3(5.2, 0.0, -1.5), "dir": Vector3(-1, 0, -0.1).normalized(), "speed": 1.6},
+		{"pos": Vector3(0.5, 0.0, -5.5), "dir": Vector3(0.4, 0, 1).normalized(), "speed": 1.5}
+	]
+	for sp in fish_spawns:
+		var fnode := Node3D.new()
+		fnode.position = sp["pos"]
+		add_child(fnode)
+		var finst := _instantiate_glb("res://assets/models/animal-fish.glb", fnode, Vector3.ZERO, Vector3.ZERO, Vector3.ONE * 0.34, true)
+		var anim := _play_glb_anim(finst, ["run", "walk", "idle"])
+		fishes.append({
+			"node": fnode,
+			"pos": sp["pos"],
+			"dir": sp["dir"],
+			"speed": sp["speed"],
+			"anim": anim,
+			"jump_t": 0.0,
+			"spin": 0.0
+		})
 
 
 func _build_boats_and_birds_3d() -> void:
-	# 1. Настоящие 3D-корабли (ship-small.glb и ship-medium.glb с текстурой палитры Kenney!)
-	var ship1 := Node3D.new()
-	ship1.position = Vector3(-9.5, 0.0, -15.6)
-	add_child(ship1)
-	_instantiate_glb("res://assets/models/ship-small.glb", ship1, Vector3(0.0, -0.1, 0.0), Vector3(0.0, 90.0, 0.0), Vector3.ONE * 0.65, true)
+	# Разнообразный морской флот (Kenney: океанский лайнер, скоростной катер, буксир)
+	# 1. Большой круизный лайнер на горизонте
+	var liner := Node3D.new()
+	liner.position = Vector3(-12.0, 0.0, -18.5)
+	add_child(liner)
+	_instantiate_glb("res://assets/models/ship-ocean-liner.glb", liner, Vector3(0.0, -0.18, 0.0), Vector3(0.0, 90.0, 0.0), Vector3.ONE * 0.32, true)
 	boats.append({
-		"node": ship1,
-		"x": -9.5,
-		"z": -15.6,
+		"node": liner,
+		"x": -12.0,
+		"z": -18.5,
 		"dir": 1.0,
-		"speed": 2.0,
-		"type": "steamboat",
+		"speed": 1.4,
+		"type": "liner",
 		"bounce": 0.0
 	})
 
-	var ship2 := Node3D.new()
-	ship2.position = Vector3(9.5, 0.0, -17.8)
-	add_child(ship2)
-	_instantiate_glb("res://assets/models/ship-medium.glb", ship2, Vector3(0.0, -0.15, 0.0), Vector3(0.0, -90.0, 0.0), Vector3.ONE * 0.56, true)
+	# 2. Скоростной катер
+	var speedboat := Node3D.new()
+	speedboat.position = Vector3(12.0, 0.0, -15.5)
+	add_child(speedboat)
+	_instantiate_glb("res://assets/models/boat-speed-a.glb", speedboat, Vector3(0.0, -0.08, 0.0), Vector3(0.0, -90.0, 0.0), Vector3.ONE * 0.65, true)
 	boats.append({
-		"node": ship2,
-		"x": 9.5,
-		"z": -17.8,
+		"node": speedboat,
+		"x": 12.0,
+		"z": -15.5,
 		"dir": -1.0,
-		"speed": 1.6,
-		"type": "sailboat",
+		"speed": 2.8,
+		"type": "speedboat",
 		"bounce": 0.0
 	})
 
-	# 2. Анимированные 3D тропические птицы в небе (Flamingo.glb и Parrot.glb)
+	# 3. Буксирчик
+	var tug := Node3D.new()
+	tug.position = Vector3(-6.0, 0.0, -16.8)
+	add_child(tug)
+	_instantiate_glb("res://assets/models/boat-tug-a.glb", tug, Vector3(0.0, -0.12, 0.0), Vector3(0.0, 90.0, 0.0), Vector3.ONE * 0.58, true)
+	boats.append({
+		"node": tug,
+		"x": -6.0,
+		"z": -16.8,
+		"dir": 1.0,
+		"speed": 1.8,
+		"type": "tug",
+		"bounce": 0.0
+	})
+
+	# Птицы в небе (Flamingo.glb, Parrot.glb, Stork.glb с готовыми анимациями полёта!)
 	var flamingo := Node3D.new()
 	flamingo.position = Vector3(-11.0, 4.8, -7.5)
 	add_child(flamingo)
@@ -843,6 +700,13 @@ func _build_boats_and_birds_3d() -> void:
 	var pr_inst := _instantiate_glb("res://assets/models/Parrot.glb", parrot, Vector3.ZERO, Vector3(0.0, -90.0, 0.0), Vector3.ONE * 0.016)
 	_play_glb_anim(pr_inst, ["fly", "take"])
 	birds.append({"node": parrot, "x": 11.0, "y": 4.2, "z": -6.0, "dir": -1.0, "speed": 3.2})
+
+	var stork := Node3D.new()
+	stork.position = Vector3(0.0, 5.4, -9.5)
+	add_child(stork)
+	var st_inst := _instantiate_glb("res://assets/models/Stork.glb", stork, Vector3.ZERO, Vector3(0.0, 90.0, 0.0), Vector3.ONE * 0.016)
+	_play_glb_anim(st_inst, ["storkFly_B_", "fly"])
+	birds.append({"node": stork, "x": 0.0, "y": 5.4, "z": -9.5, "dir": 1.0, "speed": 2.6})
 
 
 func _setup_ui_overlay() -> void:
@@ -869,6 +733,19 @@ func _draw_ui_overlay() -> void:
 func _process(delta: float) -> void:
 	world_time += delta
 
+	# Движение облаков по небу
+	for c in clouds:
+		var spd: float = float(c.get_meta("speed", 0.4))
+		c.position.x += spd * delta
+		if c.position.x > 26.0:
+			c.position.x = -26.0
+
+	# Анимация крабика на острове
+	if _crab_bounce > 0.0:
+		_crab_bounce = maxf(0.0, _crab_bounce - delta * 3.5)
+	if _island_crab != null:
+		_island_crab.position.y = 0.32 + sin(_crab_bounce * PI) * 0.65
+
 	if wheel_spin_boost > 0.0:
 		wheel_spin_boost = maxf(0.0, wheel_spin_boost - delta * 2.2)
 		wheel_angle += delta * 15.0 * wheel_spin_boost
@@ -885,15 +762,16 @@ func _process(delta: float) -> void:
 		_floating_duck.position.y = _get_wave_height(dx, dz) + _duck_bounce * 0.55
 		_floating_duck.rotation.y += delta * (6.0 if _duck_bounce > 0.0 else 0.5)
 
-	if _target_ring_timer > 0.0:
-		_target_ring_timer = maxf(0.0, _target_ring_timer - delta)
-		_target_ring.visible = true
-		var s := 1.0 + (0.6 - _target_ring_timer) * 1.5
-		_target_ring.scale = Vector3(s, 1.0, s)
-	else:
-		_target_ring.visible = false
+	if _target_ring != null:
+		if _target_ring_timer > 0.0:
+			_target_ring_timer = maxf(0.0, _target_ring_timer - delta)
+			_target_ring.visible = true
+			var s := 1.0 + (0.6 - _target_ring_timer) * 1.5
+			_target_ring.scale = Vector3(s, 1.0, s)
+		else:
+			_target_ring.visible = false
 
-	# 1. Движение девочки на жёлтом круге (с умным огибанием берегов островов!)
+	# 1. Движение девочки на круге
 	if swim_to_dad and dad_state == DadState.WAITING:
 		girl_target = dad_pos
 
@@ -902,7 +780,6 @@ func _process(delta: float) -> void:
 	var dist := to_target.length()
 	if dist > 0.15:
 		var dir := to_target / dist
-		# Если на пути к цели стоит остров — плавно рулим в обход берега!
 		for isl in islands:
 			var ipos: Vector3 = isl["pos"]
 			var safe_r: float = float(isl["radius"]) + 1.60
@@ -913,7 +790,6 @@ func _process(delta: float) -> void:
 				var n_isl := to_isl / d_isl
 				var into := dir.dot(n_isl)
 				if into > 0.0:
-					# Выбираем касательную (влево или вправо в сторону цели)
 					var tang1 := Vector3(-n_isl.z, 0.0, n_isl.x)
 					var tang2 := Vector3(n_isl.z, 0.0, -n_isl.x)
 					var best_tang := tang1 if tang1.dot(dir) >= tang2.dot(dir) else tang2
@@ -930,6 +806,9 @@ func _process(delta: float) -> void:
 
 		_wheel_pivot.rotation.y = clampf(yaw_diff * 1.6, -1.2, 1.2) + wheel_angle
 
+		if _girl_anim != null and _girl_anim.current_animation != "drive":
+			_girl_anim.play("drive")
+
 		_foam_cooldown -= delta
 		if _foam_cooldown <= 0.0:
 			_foam_cooldown = 0.16
@@ -944,8 +823,10 @@ func _process(delta: float) -> void:
 	else:
 		girl_vel = girl_vel.lerp(Vector3.ZERO, delta * 6.0)
 		_wheel_pivot.rotation.y = wheel_angle
+		if _girl_anim != null and _girl_anim.current_animation == "drive":
+			_girl_anim.play("sit" if _girl_anim.has_animation("sit") else "idle")
 
-	# Жёсткая коллизия береговой линии: круг девочки никогда не заплывает на песок острова!
+	# Коллизия с островами
 	var prev_pos := girl_pos
 	girl_pos = _push_out_of_islands(girl_pos, 1.55)
 	if girl_pos.distance_to(prev_pos) > 0.0005:
@@ -962,6 +843,9 @@ func _process(delta: float) -> void:
 			girl_vel = Vector3.ZERO
 			girl_target = girl_pos
 
+	# 2. Физика буйков-бамперов и столкновение с кругом девочки
+	_update_buoys_physics(delta)
+
 	var girl_wave_y := _get_wave_height(girl_pos.x, girl_pos.z)
 	_girl_root.position = Vector3(
 		girl_pos.x,
@@ -972,7 +856,7 @@ func _process(delta: float) -> void:
 	_girl_visual.rotation.z = sin(world_time * 3.0) * 0.07
 	_girl_visual.rotation.x = cos(world_time * 2.6) * 0.06
 
-	# 2. КОМФОРТНАЯ КАМЕРА ОТ 3-ГО ЛИЦА (плавно следует за девочкой по большой карте!)
+	# Камера от 3-го лица
 	var desired_cam_pos := Vector3(girl_pos.x * 0.78, 5.4, girl_pos.z + 7.2)
 	var desired_look := Vector3(
 		lerpf(girl_pos.x, dad_pos.x, 0.35),
@@ -983,18 +867,16 @@ func _process(delta: float) -> void:
 	_cam_look = _cam_look.lerp(desired_look, delta * 5.5)
 	_camera.look_at_from_position(_cam_pos, _cam_look, Vector3.UP)
 
-	# ЖЕЛЕЗОБЕТОННАЯ МЕХАНИКА КУПАНИЯ ПАПЫ:
-	# Как только девочка подплыла к папе вплотную — ПАПА ТОНЕТ С БРЫЗГАМИ!
+	# Купание Папы при сближении вплотную
 	if dad_state == DadState.WAITING and girl_pos.distance_to(dad_pos) <= 2.55:
 		_splash_dad_3d()
 
-	# 3. Обновляем 3D-Папу
 	_update_dad_3d(delta)
+	_update_fishes_3d(delta)
+	_update_boats_and_birds(delta)
+	_update_water_jets(delta)
 
-	# 4. Обновляем Кораблики, Птиц и Дельфинов
-	_update_boats_birds_and_dolphins(delta)
-
-	# 5. Обновляем 3D-Партиклы
+	# Обновление 3D-партиклов
 	for i in range(fx_particles.size() - 1, -1, -1):
 		var p: Dictionary = fx_particles[i]
 		p["life"] -= delta
@@ -1010,10 +892,52 @@ func _process(delta: float) -> void:
 			pnode.scale = Vector3.ONE * (ratio * float(p["base_scale"]))
 
 
-func _update_dad_3d(delta: float) -> void:
-	_dad_left_arm.rotation.z = sin(world_time * 7.2) * 0.45 - 0.25
-	_dad_right_arm.rotation.z = -sin(world_time * 7.2) * 0.45 + 0.25
+func _update_buoys_physics(delta: float) -> void:
+	for b in buoys:
+		var bnode: Node3D = b["node"]
+		var bpos: Vector3 = b["pos"]
+		var wave_y := _get_wave_height(bpos.x, bpos.z)
 
+		# Пружинный возврат качания буйка
+		var wob: Vector2 = b["wobble"]
+		var wob_vel: Vector2 = b["wobble_vel"]
+		wob_vel += -wob * 22.0 * delta - wob_vel * 4.2 * delta
+		wob += wob_vel * delta
+		b["wobble"] = wob
+		b["wobble_vel"] = wob_vel
+
+		bnode.position = Vector3(bpos.x, wave_y, bpos.z)
+		bnode.rotation_degrees = Vector3(
+			wob.x + sin(world_time * 2.8 + bpos.x) * 6.0,
+			0.0,
+			wob.y + cos(world_time * 2.4 + bpos.z) * 6.0
+		)
+
+		# Столкновение круга девочки с буйком (упругий бампер!)
+		var to_girl := girl_pos - bpos
+		to_girl.y = 0.0
+		var d := to_girl.length()
+		var min_dist := float(b["radius"]) + 1.25
+		if d < min_dist and d > 0.01:
+			var n := to_girl / d
+			# Отталкиваем девочку
+			girl_pos = bpos + n * min_dist
+			girl_vel = girl_vel.bounce(n) * 0.65 + n * 4.2
+			girl_bounce = 1.0
+
+			# Раскачиваем буёк в сторону удара
+			b["wobble_vel"] += Vector2(-n.z, n.x) * 45.0
+
+			_bell_player.pitch_scale = randf_range(0.95, 1.15)
+			_bell_player.play()
+			_boing_player.pitch_scale = randf_range(1.0, 1.2)
+			_boing_player.play()
+			Input.vibrate_handheld(35)
+
+			_spawn_splash_3d(bpos + n * 0.8, 10, Color("#E3F9FF"))
+
+
+func _update_dad_3d(delta: float) -> void:
 	var dad_wave_y := _get_wave_height(dad_pos.x, dad_pos.z)
 
 	match dad_state:
@@ -1021,7 +945,6 @@ func _update_dad_3d(delta: float) -> void:
 			_dad_root.visible = true
 			_dad_root.position = Vector3(dad_pos.x, dad_wave_y, dad_pos.z)
 			_dad_visual.scale = _dad_visual.scale.lerp(Vector3.ONE, delta * 8.0)
-			# Папа поворачивается лицом к дочке и камере
 			var look_to_cam := (_cam_pos - dad_pos).normalized()
 			_dad_visual.rotation.y = lerp_angle(_dad_visual.rotation.y, atan2(look_to_cam.x, look_to_cam.z), delta * 6.0)
 
@@ -1037,7 +960,6 @@ func _update_dad_3d(delta: float) -> void:
 				dad_timer = 1.55
 				bubble_trail_pos = dad_pos
 
-				# Выбираем новое место в море вдали от девочки и СТРОГО ВНЕ ОСТРОВОВ!
 				var found := false
 				for attempt in range(40):
 					var cand := Vector3(
@@ -1087,7 +1009,7 @@ func _update_dad_3d(delta: float) -> void:
 				_slide_player.play()
 				_splash_player.pitch_scale = 1.12
 				_splash_player.play()
-				_spawn_splash_3d(dad_pos, 12, Color("#E3F9FF"))
+				_spawn_splash_3d(dad_pos, 14, Color("#E3F9FF"))
 
 		DadState.EMERGING:
 			dad_timer -= delta
@@ -1097,15 +1019,54 @@ func _update_dad_3d(delta: float) -> void:
 			if dad_timer <= 0.0:
 				_dad_visual.scale = Vector3.ONE
 				dad_state = DadState.WAITING
+				if _dad_anim != null:
+					_dad_anim.play("emote-yes")
 
 
-func _update_boats_birds_and_dolphins(delta: float) -> void:
+func _update_fishes_3d(delta: float) -> void:
+	for f in fishes:
+		var fnode: Node3D = f["node"]
+		var fpos: Vector3 = f["pos"]
+		var dir: Vector3 = f["dir"]
+		var spd: float = float(f["speed"])
+
+		fpos += dir * spd * delta
+		# Разворот у границ моря
+		if fpos.x < SEA_MIN_X + 2.0 or fpos.x > SEA_MAX_X - 2.0:
+			dir.x = -dir.x
+		if fpos.z < SEA_MIN_Z + 2.0 or fpos.z > SEA_MAX_Z - 2.0:
+			dir.z = -dir.z
+		f["dir"] = dir
+		f["pos"] = fpos
+
+		var wave_y := _get_wave_height(fpos.x, fpos.z)
+		var jump_t: float = float(f["jump_t"])
+		if jump_t > 0.0:
+			jump_t = maxf(0.0, jump_t - delta * 1.8)
+			f["jump_t"] = jump_t
+			fnode.position = Vector3(fpos.x, wave_y + sin(jump_t * PI) * 1.25, fpos.z)
+			fnode.rotation.x = (jump_t - 0.5) * 1.8
+		else:
+			fnode.position = Vector3(fpos.x, wave_y - 0.06, fpos.z)
+			fnode.rotation.x = 0.0
+
+		fnode.rotation.y = atan2(dir.x, dir.z)
+
+		# Если девочка подплыла близко — рыбка весело выпрыгивает над волной!
+		if girl_pos.distance_to(fpos) < 2.6 and jump_t <= 0.0:
+			f["jump_t"] = 1.0
+			_splash_player.pitch_scale = randf_range(1.15, 1.35)
+			_splash_player.play()
+			_spawn_splash_3d(fpos, 8, Color("#81D4FA"))
+
+
+func _update_boats_and_birds(delta: float) -> void:
 	for b in boats:
 		b["x"] += float(b["dir"]) * float(b["speed"]) * delta
-		if float(b["dir"]) > 0.0 and float(b["x"]) > 21.0:
-			b["x"] = -21.0
-		elif float(b["dir"]) < 0.0 and float(b["x"]) < -21.0:
-			b["x"] = 21.0
+		if float(b["dir"]) > 0.0 and float(b["x"]) > 22.0:
+			b["x"] = -22.0
+		elif float(b["dir"]) < 0.0 and float(b["x"]) < -22.0:
+			b["x"] = 22.0
 		if float(b["bounce"]) > 0.0:
 			b["bounce"] = maxf(0.0, float(b["bounce"]) - delta * 2.5)
 
@@ -1117,14 +1078,14 @@ func _update_boats_birds_and_dolphins(delta: float) -> void:
 			_get_wave_height(bx, bz) + float(b["bounce"]) * 0.35,
 			bz
 		)
-		bnode.rotation.z = sin(world_time * 2.6 + bx) * 0.09
+		bnode.rotation.z = sin(world_time * 2.6 + bx) * 0.07
 
 	for br in birds:
 		br["x"] += float(br["dir"]) * float(br["speed"]) * delta
-		if float(br["dir"]) > 0.0 and float(br["x"]) > 22.0:
-			br["x"] = -22.0
-		elif float(br["dir"]) < 0.0 and float(br["x"]) < -22.0:
-			br["x"] = 22.0
+		if float(br["dir"]) > 0.0 and float(br["x"]) > 24.0:
+			br["x"] = -24.0
+		elif float(br["dir"]) < 0.0 and float(br["x"]) < -24.0:
+			br["x"] = 24.0
 		var br_node: Node3D = br["node"]
 		br_node.position = Vector3(
 			float(br["x"]),
@@ -1132,38 +1093,56 @@ func _update_boats_birds_and_dolphins(delta: float) -> void:
 			float(br["z"])
 		)
 
-	dolphin_spawn_timer -= delta
-	if dolphin_spawn_timer <= 0.0:
-		dolphin_spawn_timer = randf_range(3.5, 5.8)
-		if dolphins.size() < 2:
-			_spawn_dolphin_3d()
 
-	for i in range(dolphins.size() - 1, -1, -1):
-		var d: Dictionary = dolphins[i]
-		var prev_t: float = d["t"]
-		d["t"] += delta * 0.72
-		var t: float = d["t"]
-		var dnode: Node3D = d["node"]
-
-		if prev_t < 0.08 and t >= 0.08:
-			_spawn_splash_3d(d["start"], 10, Color.WHITE)
-
-		if t >= 1.0:
-			_spawn_splash_3d(d["end"], 12, Color.WHITE)
-			dnode.queue_free()
-			dolphins.remove_at(i)
+func _update_water_jets(delta: float) -> void:
+	for i in range(water_jets.size() - 1, -1, -1):
+		var jet: Dictionary = water_jets[i]
+		jet["life"] -= delta
+		var pnode: MeshInstance3D = jet["node"]
+		if jet["life"] <= 0.0:
+			pnode.queue_free()
+			water_jets.remove_at(i)
 		else:
-			var s: Vector3 = d["start"]
-			var e: Vector3 = d["end"]
-			var pos := s.lerp(e, t)
-			pos.y = sin(t * PI) * 3.0 - 0.35
-			dnode.position = pos
-			var jump_dir := (e - s).normalized()
-			dnode.rotation.y = atan2(jump_dir.x, jump_dir.z)
-			dnode.rotation.x = (t - 0.5) * 1.65
-			if float(d["spin"]) > 0.0:
-				d["spin"] = maxf(0.0, float(d["spin"]) - delta * 1.5)
-				dnode.rotation.z += delta * 14.0
+			jet["vel"].y -= 11.0 * delta
+			pnode.position += jet["vel"] * delta
+			# Проверяем попадание брызг в Папу!
+			if dad_state == DadState.WAITING and pnode.position.distance_to(dad_pos) <= 2.2:
+				pnode.queue_free()
+				water_jets.remove_at(i)
+				_splash_dad_3d()
+				break
+
+
+func _fire_water_jet() -> void:
+	_squeak_player.pitch_scale = randf_range(1.05, 1.25)
+	_squeak_player.play()
+	wheel_spin_boost = 1.0
+	girl_bounce = 0.85
+
+	if _girl_anim != null:
+		_girl_anim.play("emote-yes")
+
+	var forward := Vector3(sin(girl_yaw), 0.0, cos(girl_yaw))
+	var nozzle_pos := girl_pos + forward * 1.15 + Vector3(0.0, 0.45, 0.0)
+
+	# Запускаем дугу сверкающих капель воды вперёд
+	for i in range(8):
+		var spread := Vector3(randf_range(-0.15, 0.15), randf_range(-0.08, 0.12), randf_range(-0.15, 0.15))
+		var v := (forward + spread).normalized() * randf_range(6.5, 9.2)
+		v.y += randf_range(2.8, 4.4)
+
+		var mi := MeshInstance3D.new()
+		mi.mesh = _sphere_mesh_small
+		mi.material_override = _make_unshaded_mat(Color("#48DBFB"))
+		mi.position = nozzle_pos
+		mi.scale = Vector3.ONE * randf_range(0.8, 1.3)
+		add_child(mi)
+
+		water_jets.append({
+			"node": mi,
+			"vel": v,
+			"life": 0.95
+		})
 
 
 func _splash_dad_3d() -> void:
@@ -1176,14 +1155,17 @@ func _splash_dad_3d() -> void:
 	girl_bounce = 1.0
 	wheel_spin_boost = 1.0
 
+	if _dad_anim != null and _dad_anim.has_animation("die"):
+		_dad_anim.play("die")
+
 	_splash_player.pitch_scale = randf_range(0.92, 1.08)
 	_splash_player.play()
 	_laugh_player.pitch_scale = randf_range(0.95, 1.08)
 	_laugh_player.play()
 	Input.vibrate_handheld(45)
 
-	_spawn_splash_3d(dad_pos, 14, Color.WHITE)
-	_spawn_splash_3d(girl_pos + Vector3(0, 1.1, 0), 6, Color("#FFD32A"))
+	_spawn_splash_3d(dad_pos, 16, Color.WHITE)
+	_spawn_splash_3d(girl_pos + Vector3(0, 1.1, 0), 8, Color("#FFD32A"))
 
 
 func _spawn_splash_3d(origin: Vector3, count: int, col: Color) -> void:
@@ -1223,50 +1205,6 @@ func _spawn_3d_particle(pos: Vector3, vel: Vector3, col: Color, life: float, gra
 	})
 
 
-func _spawn_dolphin_3d() -> void:
-	var from_left := randf() < 0.5
-	var s := Vector3(randf_range(-9.0, -2.5) if from_left else randf_range(2.5, 9.0), 0.0, randf_range(-8.0, 1.0))
-	var e := s + Vector3(5.5 if from_left else -5.5, 0.0, randf_range(-1.2, 1.2))
-	s = _push_out_of_islands(s, 1.8)
-	e = _push_out_of_islands(e, 1.8)
-
-	var dnode := Node3D.new()
-	add_child(dnode)
-
-	var body_mat := _make_toon_mat(Color("#48DBFB"), 0.18)
-	var belly_mat := _make_toon_mat(Color("#E3F9FF"), 0.25)
-	var fin_mat := _make_toon_mat(Color("#0984E3"), 0.22)
-
-	var body := CapsuleMesh.new()
-	body.radius = 0.36
-	body.height = 1.65
-	body.radial_segments = 24
-	_add_mesh(dnode, body, body_mat, Vector3.ZERO, Vector3(90.0, 0.0, 0.0))
-	_add_mesh(dnode, body, belly_mat, Vector3(0.0, -0.08, 0.0), Vector3(90.0, 0.0, 0.0), Vector3(0.82, 0.85, 0.92))
-
-	var snout := CapsuleMesh.new()
-	snout.radius = 0.14
-	snout.height = 0.62
-	_add_mesh(dnode, snout, body_mat, Vector3(0.0, -0.04, 0.82), Vector3(90.0, 0.0, 0.0))
-
-	var fin := PrismMesh.new()
-	fin.size = Vector3(0.12, 0.54, 0.52)
-	_add_mesh(dnode, fin, fin_mat, Vector3(0.0, 0.42, -0.08))
-
-	var tail := CapsuleMesh.new()
-	tail.radius = 0.12
-	tail.height = 0.85
-	_add_mesh(dnode, tail, fin_mat, Vector3(0.0, 0.0, -0.88), Vector3(0.0, 0.0, 90.0), Vector3(0.35, 1.0, 1.2))
-
-	dolphins.append({
-		"node": dnode,
-		"start": s,
-		"end": e,
-		"t": 0.0,
-		"spin": 0.0
-	})
-
-
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and event.pressed:
 		_handle_screen_touch(event.position, false)
@@ -1282,7 +1220,7 @@ func _handle_screen_touch(screen_pt: Vector2, is_drag: bool) -> void:
 		get_tree().change_scene_to_file("res://scenes/menu.tscn")
 		return
 
-	# 2. Нажатие на Папу в воде (проверяем ПЕРВЫМ, чтобы папа всегда легко нажимался и тонул!)
+	# 2. Нажатие на Папу в воде
 	if dad_state == DadState.WAITING and _camera.is_position_in_frustum(_dad_root.global_position):
 		var dad_screen := _camera.unproject_position(_dad_root.global_position + Vector3(0, 0.6, 0))
 		if screen_pt.distance_to(dad_screen) <= 105.0:
@@ -1298,18 +1236,39 @@ func _handle_screen_touch(screen_pt: Vector2, is_drag: bool) -> void:
 					_squeak_player.play()
 			return
 
-	# 3. Нажатие на Девочку / жёлтый круг / руль — "Би-бип!"
+	# 3. Нажатие на Девочку / круг / руль — ВОДЯНАЯ ПУШКА!
 	if not is_drag and _camera.is_position_in_frustum(_girl_root.global_position):
 		var girl_screen := _camera.unproject_position(_girl_root.global_position + Vector3(0, 0.6, 0))
-		if screen_pt.distance_to(girl_screen) <= 75.0:
-			_squeak_player.pitch_scale = randf_range(0.95, 1.15)
-			_squeak_player.play()
-			wheel_spin_boost = 1.0
-			girl_bounce = 0.85
-			_spawn_splash_3d(girl_pos + Vector3(0, 0.9, 0), 8, Color("#FFD32A"))
+		if screen_pt.distance_to(girl_screen) <= 80.0:
+			_fire_water_jet()
 			return
 
-	# 4. Нажатие на плавающую 3D резиновую уточку (duck.glb)
+	# 4. Нажатие на крабика на пляже острова
+	if not is_drag and _island_crab != null and _camera.is_position_in_frustum(_island_crab.global_position):
+		var crab_screen := _camera.unproject_position(_island_crab.global_position + Vector3(0, 0.3, 0))
+		if screen_pt.distance_to(crab_screen) <= 75.0:
+			_crab_bounce = 1.0
+			if _crab_anim != null and _crab_anim.has_animation("dance"):
+				_crab_anim.play("dance")
+			_tap_player.pitch_scale = randf_range(1.1, 1.3)
+			_tap_player.play()
+			_spawn_splash_3d(_island_crab.global_position, 8, Color("#FFEAA7"))
+			return
+
+	# 5. Нажатие на буйки-бамперы в море
+	if not is_drag:
+		for b in buoys:
+			var bnode: Node3D = b["node"]
+			if _camera.is_position_in_frustum(bnode.global_position):
+				var b_screen := _camera.unproject_position(bnode.global_position + Vector3(0, 0.4, 0))
+				if screen_pt.distance_to(b_screen) <= 75.0:
+					b["wobble_vel"] += Vector2(randf_range(-35, 35), randf_range(-35, 35))
+					_bell_player.pitch_scale = randf_range(1.0, 1.25)
+					_bell_player.play()
+					_spawn_splash_3d(bnode.global_position, 8, Color("#E3F9FF"))
+					return
+
+	# 6. Нажатие на плавающую 3D-уточку
 	if not is_drag and _floating_duck != null and _camera.is_position_in_frustum(_floating_duck.global_position):
 		var duck_screen := _camera.unproject_position(_floating_duck.global_position)
 		if screen_pt.distance_to(duck_screen) <= 70.0:
@@ -1319,20 +1278,23 @@ func _handle_screen_touch(screen_pt: Vector2, is_drag: bool) -> void:
 			_spawn_splash_3d(_floating_duck.global_position, 10, Color("#FFD32A"))
 			return
 
-	# 5. Нажатие на прыгающих 3D-Дельфинов
+	# 7. Нажатие на стайку рыбок
 	if not is_drag:
-		for d in dolphins:
-			var dnode: Node3D = d["node"]
-			if _camera.is_position_in_frustum(dnode.global_position):
-				var d_screen := _camera.unproject_position(dnode.global_position)
-				if screen_pt.distance_to(d_screen) <= 85.0:
-					d["spin"] = 1.0
-					_slide_player.pitch_scale = 1.25
-					_slide_player.play()
-					_spawn_splash_3d(dnode.global_position, 14, Color("#FFEAA7"))
+		for f in fishes:
+			var fnode: Node3D = f["node"]
+			if _camera.is_position_in_frustum(fnode.global_position):
+				var f_screen := _camera.unproject_position(fnode.global_position)
+				if screen_pt.distance_to(f_screen) <= 75.0:
+					f["jump_t"] = 1.0
+					var anim: AnimationPlayer = f["anim"]
+					if anim != null and anim.has_animation("dance"):
+						anim.play("dance")
+					_splash_player.pitch_scale = 1.3
+					_splash_player.play()
+					_spawn_splash_3d(fnode.global_position, 10, Color("#81D4FA"))
 					return
 
-	# 6. Нажатие на 3D-Кораблики ("Ту-тууу!")
+	# 8. Нажатие на корабли на горизонте
 	if not is_drag:
 		for b in boats:
 			var bnode: Node3D = b["node"]
@@ -1340,7 +1302,12 @@ func _handle_screen_touch(screen_pt: Vector2, is_drag: bool) -> void:
 				var b_screen := _camera.unproject_position(bnode.global_position + Vector3(0, 0.5, 0))
 				if screen_pt.distance_to(b_screen) <= 85.0:
 					b["bounce"] = 1.0
-					_horn_player.pitch_scale = 1.0 if b["type"] == "steamboat" else 1.22
+					if b["type"] == "liner":
+						_horn_player.pitch_scale = 0.82
+					elif b["type"] == "tug":
+						_horn_player.pitch_scale = 1.15
+					else:
+						_horn_player.pitch_scale = 1.35
 					_horn_player.play()
 					for i in range(6):
 						_spawn_3d_particle(
@@ -1353,7 +1320,7 @@ func _handle_screen_touch(screen_pt: Vector2, is_drag: bool) -> void:
 						)
 					return
 
-	# 7. Нажатие или ведение пальчиком по 3D-воде — девочка плывёт туда!
+	# 9. Нажатие или ведение пальчиком по воде — плывём к цели
 	var ray_origin := _camera.project_ray_origin(screen_pt)
 	var ray_dir := _camera.project_ray_normal(screen_pt)
 	var hit = Plane(Vector3.UP, 0.0).intersects_ray(ray_origin, ray_dir)
@@ -1365,7 +1332,6 @@ func _handle_screen_touch(screen_pt: Vector2, is_drag: bool) -> void:
 			clampf(target_pt.z, SEA_MIN_Z, SEA_MAX_Z)
 		)
 		girl_target = _push_out_of_islands(girl_target, 1.45)
-		# Если кликнули рядом с папой — сразу примагничиваем цель к папе!
 		if dad_state == DadState.WAITING and girl_target.distance_to(dad_pos) <= 2.4:
 			swim_to_dad = true
 			girl_target = dad_pos
