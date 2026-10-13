@@ -128,6 +128,40 @@ func spawn_splash(origin: Vector3, count: int, col: Color) -> void:
 		)
 
 
+func spawn_sparkles(origin: Vector3, count: int = 8, col: Color = Color("#FFD700")) -> void:
+	for i in range(count):
+		var a := randf() * TAU
+		var spd := randf_range(1.2, 2.6)
+		spawn_particle(
+			origin + Vector3(randf_range(-0.15, 0.15), randf_range(0.1, 0.4), randf_range(-0.15, 0.15)),
+			Vector3(cos(a) * spd, randf_range(2.0, 3.8), sin(a) * spd),
+			col,
+			randf_range(0.5, 0.8),
+			true,
+			randf_range(0.7, 1.1)
+		)
+
+
+func spawn_firework(origin: Vector3, colors: Array[Color] = []) -> void:
+	if colors.is_empty():
+		colors = [Color("#FF4757"), Color("#FFA502"), Color("#2ED573"), Color("#1E90FF"), Color("#9B59B6")]
+	spawn_ripple(Vector3(origin.x, 0.05, origin.z), 0.3, 2.4, Color(1.0, 0.9, 0.4, 0.8), 0.7)
+	for i in range(16):
+		var a := randf() * TAU
+		var elevation := randf_range(0.2, 1.4)
+		var spd := randf_range(2.5, 5.5)
+		var c: Color = colors[i % colors.size()]
+		spawn_particle(
+			origin + Vector3(0.0, 0.4, 0.0),
+			Vector3(cos(a) * spd, sin(elevation) * spd + 4.5, sin(a) * spd),
+			c,
+			randf_range(0.65, 0.95),
+			true,
+			randf_range(1.1, 1.6)
+		)
+
+
+
 func spawn_particle(pos: Vector3, vel: Vector3, col: Color, life: float, gravity: bool, base_scale: float = 1.0) -> MeshInstance3D:
 	var mi: MeshInstance3D = null
 	for item in _particle_pool:

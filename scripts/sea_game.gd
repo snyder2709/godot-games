@@ -20,6 +20,13 @@ var _fauna: MarineFauna
 var _dad: DadActor
 var _girl: GirlController
 var _beach_ball: BeachBall
+var _treasures: MarineTreasures
+var _sky_controller: SkyController
+
+var _env: Environment
+var _sky_mat: ProceduralSkyMaterial
+var _sun: DirectionalLight3D
+var _splash_streak: int = 0
 
 # Аудиоплееры
 var _splash_player: AudioStreamPlayer
@@ -89,6 +96,18 @@ func _setup_modules() -> void:
 	_beach_ball.ball_bumped.connect(_on_ball_bumped)
 	_beach_ball.dad_passed_ball.connect(_on_dad_passed_ball)
 
+	_treasures = MarineTreasures.new()
+	add_child(_treasures)
+	_treasures.init_treasures()
+	_treasures.pearl_revealed.connect(_on_pearl_revealed)
+	_treasures.starfish_clicked.connect(_on_starfish_clicked)
+	_treasures.lighthouse_clicked.connect(_on_lighthouse_clicked)
+
+	_sky_controller = SkyController.new()
+	add_child(_sky_controller)
+	_sky_controller.init_sky(_env, _sky_mat, _sun, _water_surface)
+	_sky_controller.time_changed.connect(_on_time_changed)
+
 	_girl = GirlController.new()
 	add_child(_girl)
 	_girl.init_controller()
@@ -98,34 +117,36 @@ func _setup_modules() -> void:
 
 
 
-func _setup_environment_and_camera() -> void:
-	var env := Environment.new()
-	var sky := Sky.new()
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color("#29B6F6")
-	sky_mat.sky_horizon_color = Color("#B3E5FC")
-	sky_mat.ground_bottom_color = Color("#0288D1")
-	sky_mat.ground_horizon_color = Color("#81D4FA")
-	sky.sky_material = sky_mat
 
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_color = Color("#FFFDF7")
-	env.ambient_light_energy = 1.05
-	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
-	env.glow_enabled = false
+func _setup_environment_and_camera() -> void:
+	_env = Environment.new()
+	var sky := Sky.new()
+	_sky_mat = ProceduralSkyMaterial.new()
+	_sky_mat.sky_top_color = Color("#29B6F6")
+	_sky_mat.sky_horizon_color = Color("#B3E5FC")
+	_sky_mat.ground_bottom_color = Color("#0288D1")
+	_sky_mat.ground_horizon_color = Color("#81D4FA")
+	sky.sky_material = _sky_mat
+
+	_env.background_mode = Environment.BG_SKY
+	_env.sky = sky
+	_env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	_env.ambient_light_color = Color("#FFFDF7")
+	_env.ambient_light_energy = 1.05
+	_env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	_env.glow_enabled = false
 
 	var world_env := WorldEnvironment.new()
-	world_env.environment = env
+	world_env.environment = _env
 	add_child(world_env)
 
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-42.0, -28.0, 0.0)
-	sun.light_color = Color("#FFF9E6")
-	sun.light_energy = 1.25
-	sun.shadow_enabled = false
-	add_child(sun)
+	_sun = DirectionalLight3D.new()
+	_sun.rotation_degrees = Vector3(-42.0, -28.0, 0.0)
+	_sun.light_color = Color("#FFF9E6")
+	_sun.light_energy = 1.25
+	_sun.shadow_enabled = false
+	add_child(_sun)
+
 
 	_camera = Camera3D.new()
 	_camera.fov = 52.0
@@ -182,6 +203,8 @@ func _process(delta: float) -> void:
 	_fleet.update_fleet(delta, world_time, _water_surface)
 	_fauna.update_fauna(delta, world_time, _water_surface, _girl.girl_pos)
 	_buoy_manager.update_buoys(delta, world_time, _water_surface)
+	_treasures.update_treasures(delta, world_time)
+
 
 	# Столкновение круга с буйками
 	var hit := _buoy_manager.check_girl_collision(_girl.girl_pos, _girl.girl_vel)
@@ -281,6 +304,7 @@ func _on_boat_clicked(boat_pos: Vector3, boat_type: String) -> void:
 
 
 func _on_dad_splashed() -> void:
+	_splash_streak += 1
 	_girl.stop_navigation()
 	_girl.girl_bounce = 1.0
 	_girl.wheel_spin_boost = 1.0
@@ -294,6 +318,10 @@ func _on_dad_splashed() -> void:
 	_fx_pool.spawn_splash(_dad.get_pos(), 16, Color.WHITE)
 	_fx_pool.spawn_ripple(_dad.get_pos(), 0.4, 2.5, Color(1.0, 1.0, 1.0, 0.8), 0.65)
 	_fx_pool.spawn_splash(_girl.girl_pos + Vector3(0, 1.0, 0), 8, Color("#FFD32A"))
+
+	if _splash_streak % 5 == 0:
+		_trigger_celebration()
+
 
 
 func _on_dad_bubble_tick(pos: Vector3) -> void:
@@ -381,6 +409,53 @@ func _on_girl_foam_spawned(pos: Vector3) -> void:
 	_fx_pool.spawn_ripple(pos, 0.18, 0.85, Color(1.0, 1.0, 1.0, 0.45), 0.35)
 
 
+func _trigger_celebration() -> void:
+	var dpos := _dad.get_pos()
+	_fx_pool.spawn_firework(dpos + Vector3(-2.4, 0.0, -1.8))
+	_fx_pool.spawn_firework(dpos + Vector3(2.5, 0.0, 1.5))
+	_fx_pool.spawn_firework(_girl.girl_pos + Vector3(-2.0, 0.0, 2.0))
+	_fx_pool.spawn_firework(_girl.girl_pos + Vector3(2.2, 0.0, -1.6))
+
+	_laugh_player.pitch_scale = 1.15
+	_laugh_player.play()
+	_bell_player.pitch_scale = 1.35
+	_bell_player.play()
+	_horn_player.pitch_scale = 1.25
+	_horn_player.play()
+
+	for i in range(8):
+		var b_offset := Vector3(randf_range(-1.5, 1.5), 1.0, randf_range(-1.5, 1.5))
+		var b_vel := Vector3(randf_range(-0.5, 0.5), randf_range(1.2, 2.2), randf_range(-0.5, 0.5))
+		_fx_pool.spawn_floating_bubble(dpos + b_offset, b_vel, randf_range(0.24, 0.38))
+
+
+func _on_pearl_revealed(pos: Vector3) -> void:
+	_bell_player.pitch_scale = randf_range(1.25, 1.45)
+	_bell_player.play()
+	_fx_pool.spawn_sparkles(pos, 12, Color("#FFEAA7"))
+	_fx_pool.spawn_floating_bubble(pos, Vector3(0.0, 1.3, 0.0), 0.28, 4.0)
+
+
+func _on_starfish_clicked(pos: Vector3) -> void:
+	_boing_player.pitch_scale = randf_range(1.35, 1.55)
+	_boing_player.play()
+	_fx_pool.spawn_sparkles(pos, 8, Color("#FF6B6B"))
+	_fx_pool.spawn_ripple(pos, 0.2, 1.3, Color(1.0, 0.8, 0.8, 0.7), 0.4)
+
+
+func _on_lighthouse_clicked(pos: Vector3) -> void:
+	_bell_player.pitch_scale = 0.92
+	_bell_player.play()
+	_fx_pool.spawn_sparkles(pos, 8, Color("#FFF9E6"))
+
+
+func _on_time_changed(new_time: int) -> void:
+	_treasures.set_night_mode(new_time == SkyController.TimeOfDay.NIGHT)
+	if _ui_canvas:
+		_ui_canvas.queue_redraw()
+
+
+
 
 # --- Обработка ввода (Touch / Mouse) ---
 
@@ -399,12 +474,26 @@ func _handle_screen_touch(screen_pt: Vector2, is_drag: bool) -> void:
 		get_tree().change_scene_to_file("res://scenes/menu.tscn")
 		return
 
+	# 1.2. Кнопка смены времени суток "Солнышко / Луна"
+	var vp_width := get_viewport().size.x if get_viewport() else 1280.0
+	var sb := Vector2(vp_width - 65, 62)
+	if not is_drag and screen_pt.distance_to(sb) <= 45.0:
+		if _sky_controller:
+			_sky_controller.cycle_time()
+			_bell_player.pitch_scale = randf_range(1.15, 1.35)
+			_bell_player.play()
+		return
+
 	# 1.5. Лопание летающих мыльных пузырей от Папы
 	if not is_drag and _fx_pool.check_bubble_touch(_camera, screen_pt):
 		return
 
 	# 1.8. Нажатие на надувной пляжный мячик
 	if not is_drag and _beach_ball.check_touch(_camera, screen_pt):
+		return
+
+	# 1.9. Нажатие на морские сокровища (ракушка с жемчужиной, звёздочка, маяк)
+	if not is_drag and _treasures.check_touch(_camera, screen_pt):
 		return
 
 	# 2. Нажатие на Папу в воде
@@ -470,6 +559,7 @@ func _setup_ui_overlay() -> void:
 
 
 func _draw_ui_overlay() -> void:
+	# 1. Кнопка "Домик"
 	var hb := Vector2(65, 62)
 	_ui_canvas.draw_circle(hb, 36.0, Color(1, 1, 1, 0.94))
 	_ui_canvas.draw_arc(hb, 36.0, 0, TAU, 28, Color("#0984E3"), 4.0, true)
@@ -480,3 +570,27 @@ func _draw_ui_overlay() -> void:
 		hb + Vector2(21, 0)
 	]), Color("#FF7675"))
 	_ui_canvas.draw_rect(Rect2(hb.x - 5, hb.y + 6, 10, 12), Color("#FFF9E6"))
+
+	# 2. Кнопка "Солнышко / Закат / Луна"
+	var vp_width := get_viewport().size.x if get_viewport() else 1280.0
+	var sb := Vector2(vp_width - 65, 62)
+	_ui_canvas.draw_circle(sb, 36.0, Color(1, 1, 1, 0.94))
+	_ui_canvas.draw_arc(sb, 36.0, 0, TAU, 28, Color("#FFA502"), 4.0, true)
+
+	if _sky_controller and _sky_controller.current_time == SkyController.TimeOfDay.DAY:
+		_ui_canvas.draw_circle(sb, 16.0, Color("#FFD32A"))
+		for i in range(8):
+			var a := i * (TAU / 8.0)
+			var p1 := sb + Vector2(cos(a) * 20.0, sin(a) * 20.0)
+			var p2 := sb + Vector2(cos(a) * 26.0, sin(a) * 26.0)
+			_ui_canvas.draw_line(p1, p2, Color("#FFA502"), 3.5, true)
+	elif _sky_controller and _sky_controller.current_time == SkyController.TimeOfDay.SUNSET:
+		_ui_canvas.draw_circle(sb + Vector2(0, -3), 16.0, Color("#FF6B6B"))
+		_ui_canvas.draw_rect(Rect2(sb.x - 20, sb.y + 3, 40, 16), Color("#FD79A8"))
+		_ui_canvas.draw_line(sb + Vector2(-18, 5), sb + Vector2(18, 5), Color("#F39C12"), 3.0, true)
+	else:
+		_ui_canvas.draw_circle(sb + Vector2(-2, 0), 16.0, Color("#F1C40F"))
+		_ui_canvas.draw_circle(sb + Vector2(5, -4), 14.0, Color(1, 1, 1, 0.94))
+		_ui_canvas.draw_circle(sb + Vector2(14, 5), 2.8, Color("#F39C12"))
+		_ui_canvas.draw_circle(sb + Vector2(9, -12), 2.2, Color("#F39C12"))
+

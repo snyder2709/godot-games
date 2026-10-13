@@ -30,7 +30,12 @@ func init_surface(colormap: Texture2D) -> void:
 	_build_target_ring()
 
 
+func get_material() -> ShaderMaterial:
+	return _water_shader_mat
+
+
 func get_wave_height(x: float, z: float, time: float) -> float:
+
 	var w1 := sin(x * 0.8 + time * 2.0) * cos(z * 0.7 + time * 1.6) * 0.12
 	var w2 := sin((x + z) * 1.3 - time * 2.4) * 0.06
 	return w1 + w2
