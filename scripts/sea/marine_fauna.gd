@@ -42,65 +42,25 @@ func _build_island_crab() -> void:
 
 
 func _build_dolphins() -> void:
-	# Создаём двух красивых дельфинов, прыгающих поочерёдно
+	# Используем готовую 3D-модель дельфина с плавательной скелетной анимацией
 	for i in range(2):
 		var dnode := Node3D.new()
 		dnode.visible = false
 		add_child(dnode)
-		_build_dolphin_mesh(dnode)
+		var d_model := _instantiate_model(
+			"res://assets/models/dolphin.glb",
+			dnode,
+			Vector3.ZERO,
+			Vector3(-90.0, 0.0, 0.0),
+			Vector3.ONE * 0.009
+		)
+		_play_glb_anim(d_model, [&"Take 001", &"Armature", &"swim", &"idle"])
 
 		var dd := DolphinData.new()
 		dd.node = dnode
-		dd.delay = 1.2 + float(i) * 2.8
+		dd.delay = 1.2 + float(i) * 3.0
 		dd.active = false
 		dolphins.append(dd)
-
-
-func _build_dolphin_mesh(parent: Node3D) -> void:
-	var body_mat := _make_mat(Color("#22A6B3"), 0.20)
-	var belly_mat := _make_mat(Color("#E3FAFC"), 0.25)
-	var fin_mat := _make_mat(Color("#0984E3"), 0.22)
-	var eye_mat := StandardMaterial3D.new()
-	eye_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	eye_mat.albedo_color = Color("#2D3436")
-
-	# Тело
-	var body := CapsuleMesh.new()
-	body.radius = 0.32
-	body.height = 1.60
-	body.radial_segments = 18
-	_add_mesh(parent, body, body_mat, Vector3.ZERO, Vector3(90.0, 0.0, 0.0))
-	_add_mesh(parent, body, belly_mat, Vector3(0.0, -0.07, 0.0), Vector3(90.0, 0.0, 0.0), Vector3(0.82, 0.85, 0.92))
-
-	# Носик
-	var snout := CapsuleMesh.new()
-	snout.radius = 0.13
-	snout.height = 0.56
-	_add_mesh(parent, snout, body_mat, Vector3(0.0, -0.03, 0.80), Vector3(90.0, 0.0, 0.0))
-
-	# Спинной плавник
-	var fin := PrismMesh.new()
-	fin.size = Vector3(0.10, 0.46, 0.48)
-	_add_mesh(parent, fin, fin_mat, Vector3(0.0, 0.38, -0.08))
-
-	# Боковые плавники
-	var pfin := PrismMesh.new()
-	pfin.size = Vector3(0.08, 0.36, 0.32)
-	_add_mesh(parent, pfin, fin_mat, Vector3(-0.30, -0.08, 0.22), Vector3(15.0, 0.0, -45.0))
-	_add_mesh(parent, pfin, fin_mat, Vector3(0.30, -0.08, 0.22), Vector3(15.0, 0.0, 45.0))
-
-	# Хвост и хвостовые лопасти
-	var tail := CapsuleMesh.new()
-	tail.radius = 0.11
-	tail.height = 0.78
-	_add_mesh(parent, tail, fin_mat, Vector3(0.0, 0.0, -0.84), Vector3(0.0, 0.0, 90.0), Vector3(0.32, 1.0, 1.15))
-
-	# Глазки
-	var eye_mesh := SphereMesh.new()
-	eye_mesh.radius = 0.032
-	eye_mesh.height = 0.064
-	_add_mesh(parent, eye_mesh, eye_mat, Vector3(-0.16, 0.08, 0.52))
-	_add_mesh(parent, eye_mesh, eye_mat, Vector3(0.16, 0.08, 0.52))
 
 
 func update_fauna(delta: float, world_time: float, water_surface: WaterSurface, _girl_pos: Vector3) -> void:
@@ -137,17 +97,14 @@ func update_fauna(delta: float, world_time: float, water_surface: WaterSurface, 
 			var e := d.end_pos
 			var pos := s.lerp(e, d.t)
 			pos.y = sin(d.t * PI) * 2.85 - 0.25
-			d.node.position = pos
 
 			var jump_dir := (e - s).normalized()
-			d.node.rotation.y = atan2(jump_dir.x, jump_dir.z)
-			d.node.rotation.x = (d.t - 0.5) * 1.65
+			d.node.look_at_from_position(pos, pos + jump_dir, Vector3.UP)
+			d.node.rotate_object_local(Vector3.RIGHT, (d.t - 0.5) * 1.5)
 
 			if d.spin > 0.0:
 				d.spin = maxf(0.0, d.spin - delta * 1.6)
-				d.node.rotation.z += delta * 14.0
-			else:
-				d.node.rotation.z = 0.0
+				d.node.rotate_object_local(Vector3.FORWARD, delta * 14.0)
 
 
 func _start_dolphin_jump(d: DolphinData, water_surface: WaterSurface) -> void:
@@ -192,26 +149,6 @@ func check_touch(camera: Camera3D, screen_pt: Vector2) -> bool:
 				return true
 
 	return false
-
-
-func _make_mat(col: Color, roughness: float = 0.3) -> StandardMaterial3D:
-	var mat := StandardMaterial3D.new()
-	mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
-	mat.specular_mode = BaseMaterial3D.SPECULAR_TOON
-	mat.roughness = roughness
-	mat.albedo_color = col
-	return mat
-
-
-func _add_mesh(parent: Node3D, mesh: Mesh, mat: Material, pos := Vector3.ZERO, rot_deg := Vector3.ZERO, sc := Vector3.ONE) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.material_override = mat
-	mi.position = pos
-	mi.rotation_degrees = rot_deg
-	mi.scale = sc
-	parent.add_child(mi)
-	return mi
 
 
 func _play_glb_anim(node: Node3D, preferred_names: Array[StringName]) -> AnimationPlayer:
