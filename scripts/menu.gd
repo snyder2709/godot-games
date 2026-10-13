@@ -3,10 +3,8 @@ extends Node2D
 const VIEW_W := 1280.0
 const VIEW_H := 720.0
 
-const CARD_CATS_RECT := Rect2(140, 175, 450, 440)
-const CARD_SEA_RECT := Rect2(690, 175, 450, 440)
-
 var anim_time: float = 0.0
+
 var _chime_player: AudioStreamPlayer
 var _meow_player: AudioStreamPlayer
 var _splash_player: AudioStreamPlayer
@@ -20,6 +18,8 @@ var clouds := [
 
 
 func _ready() -> void:
+	DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR_LANDSCAPE)
+
 	_chime_player = AudioStreamPlayer.new()
 	_chime_player.stream = SoundGen.get_toy_stream()
 	add_child(_chime_player)
@@ -33,11 +33,29 @@ func _ready() -> void:
 	add_child(_splash_player)
 
 
+func _get_view_size() -> Vector2:
+	var vp := get_viewport()
+	return vp.get_visible_rect().size if vp != null else Vector2(1280.0, 720.0)
+
+
+func _get_card_cats_rect() -> Rect2:
+	var vs := _get_view_size()
+	var cx := vs.x * 0.5
+	return Rect2(cx - 475.0, 175.0, 450.0, 440.0)
+
+
+func _get_card_sea_rect() -> Rect2:
+	var vs := _get_view_size()
+	var cx := vs.x * 0.5
+	return Rect2(cx + 25.0, 175.0, 450.0, 440.0)
+
+
 func _process(delta: float) -> void:
 	anim_time += delta
+	var vs := _get_view_size()
 	for c in clouds:
 		c["x"] += c["speed"] * delta
-		if c["x"] > VIEW_W + 150.0:
+		if c["x"] > vs.x + 150.0:
 			c["x"] = -150.0
 	queue_redraw()
 
@@ -52,14 +70,14 @@ func _input(event: InputEvent) -> void:
 
 
 func _on_tap(pt: Vector2) -> void:
-	if CARD_CATS_RECT.has_point(pt):
+	if _get_card_cats_rect().has_point(pt):
 		_switching = true
 		_meow_player.play()
 		_chime_player.play()
 		var tw := create_tween()
 		tw.tween_interval(0.28)
 		tw.tween_callback(func(): get_tree().change_scene_to_file("res://scenes/main.tscn"))
-	elif CARD_SEA_RECT.has_point(pt):
+	elif _get_card_sea_rect().has_point(pt):
 		_switching = true
 		_splash_player.play()
 		_chime_player.play()
@@ -70,12 +88,15 @@ func _on_tap(pt: Vector2) -> void:
 
 func _draw() -> void:
 	var font := ThemeDB.fallback_font
+	var vs := _get_view_size()
+	var w := vs.x
+	var h := vs.y
 
-	# 1. Фон неба и лужайки
-	draw_rect(Rect2(-200, -200, VIEW_W + 400, VIEW_H + 400), Color("#74B9FF"))
-	draw_rect(Rect2(-200, 320, VIEW_W + 400, VIEW_H), Color("#A3DAFF"))
-	draw_circle(Vector2(320, 960), 540.0, Color("#55EFC4").darkened(0.1))
-	draw_circle(Vector2(980, 960), 560.0, Color("#00B894").lightened(0.1))
+	# 1. Фон неба и лужайки на всю ширину и высоту экрана
+	draw_rect(Rect2(-300, -300, w + 600, h + 600), Color("#74B9FF"))
+	draw_rect(Rect2(-300, 320, w + 600, h + 200), Color("#A3DAFF"))
+	draw_circle(Vector2(w * 0.25, 960), 540.0, Color("#55EFC4").darkened(0.1))
+	draw_circle(Vector2(w * 0.75, 960), 560.0, Color("#00B894").lightened(0.1))
 
 	# Облака
 	for c in clouds:
@@ -87,15 +108,16 @@ func _draw() -> void:
 		draw_circle(Vector2(cx - 26.0 * sc, cy + 6.0 * sc), 22.0 * sc, col)
 		draw_circle(Vector2(cx + 28.0 * sc, cy + 5.0 * sc), 24.0 * sc, col)
 
-	# 2. Заголовок библиотеки игр
-	var title_box := Rect2(310, 26, 660, 96)
+	# 2. Заголовок библиотеки игр (центрирован по ширине)
+	var title_w := 660.0
+	var title_box := Rect2((w - title_w) * 0.5, 26, title_w, 96)
 	_draw_rounded_panel(title_box, Color("#FFFFFF"), Color("#FFEAA7"), 8.0)
 	draw_string(
 		font,
 		Vector2(0, 74),
 		"ЛАДУШКИ: ИГРЫ ДЛЯ МАЛЫШЕЙ 2+",
 		HORIZONTAL_ALIGNMENT_CENTER,
-		VIEW_W,
+		w,
 		34,
 		Color("#2D3436")
 	)
@@ -104,14 +126,15 @@ func _draw() -> void:
 		Vector2(0, 108),
 		"Нажми на картинку, чтобы играть!",
 		HORIZONTAL_ALIGNMENT_CENTER,
-		VIEW_W,
+		w,
 		20,
 		Color("#636E72")
 	)
 
 	# 3. КАРТОЧКА 1: «ПОЮЩИЕ КОТИКИ»
 	var bounce1 := sin(anim_time * 3.0) * 5.0
-	var r1 := CARD_CATS_RECT.grow(bounce1 * 0.4)
+	var r1 := _get_card_cats_rect().grow(bounce1 * 0.4)
+
 	# Тень карточки
 	_draw_rounded_panel(Rect2(r1.position + Vector2(0, 10), r1.size), Color(0, 0, 0, 0.18), Color.TRANSPARENT, 0.0)
 	_draw_rounded_panel(r1, Color("#FFF9E6"), Color("#FF9F43"), 10.0)
@@ -156,7 +179,8 @@ func _draw() -> void:
 
 	# 4. КАРТОЧКА 2: «КУПАЕМ ПАПУ!»
 	var bounce2 := sin(anim_time * 3.0 + 1.5) * 5.0
-	var r2 := CARD_SEA_RECT.grow(bounce2 * 0.4)
+	var r2 := _get_card_sea_rect().grow(bounce2 * 0.4)
+
 	_draw_rounded_panel(Rect2(r2.position + Vector2(0, 10), r2.size), Color(0, 0, 0, 0.18), Color.TRANSPARENT, 0.0)
 	_draw_rounded_panel(r2, Color("#EBF9FF"), Color("#0984E3"), 10.0)
 

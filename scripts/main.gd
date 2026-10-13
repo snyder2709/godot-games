@@ -47,9 +47,11 @@ var _toy_player: AudioStreamPlayer
 
 
 func _ready() -> void:
+	DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR_LANDSCAPE)
 	randomize()
 
 	_pop_player = AudioStreamPlayer.new()
+
 	_pop_player.stream = SoundGen.get_pop_stream()
 	_pop_player.max_polyphony = 8
 	add_child(_pop_player)
@@ -136,7 +138,10 @@ func _setup_cats() -> void:
 		}
 	]
 
-	var start_x := 200.0
+	var w := _get_view_width()
+	var cat_count := configs.size()
+	var total_w := (cat_count - 1) * 220.0
+	var start_x := (w - total_w) * 0.5
 	var spacing := 220.0
 
 	for i in range(configs.size()):
@@ -157,6 +162,12 @@ func _setup_cats() -> void:
 		cats.append(cat)
 
 
+func _get_view_width() -> float:
+	var vp := get_viewport()
+	return float(vp.get_visible_rect().size.x) if vp != null else 1280.0
+
+
+
 func _process(delta: float) -> void:
 	world_time += delta
 	if sun_bounce > 0.0:
@@ -171,10 +182,12 @@ func _process(delta: float) -> void:
 			s["bounce"] = maxf(0.0, s["bounce"] - delta * 3.0)
 
 	# Движение облачков
+	var w := _get_view_width()
 	for c in clouds:
 		c["x"] += c["speed"] * delta
-		if c["x"] > VIEW_W + 160.0:
+		if c["x"] > w + 160.0:
 			c["x"] = -160.0
+
 
 	# Спавн мыльных пузырей
 	spawn_timer -= delta
@@ -295,7 +308,7 @@ func _handle_touch_point(pt: Vector2, is_drag: bool) -> void:
 				return
 
 	# 4. Нажатие на Солнышко / Луну переключает День и Ночь + выпускает пузыри!
-	if not is_drag and pt.distance_to(Vector2(1130, 105)) <= 80.0:
+	if not is_drag and pt.distance_to(Vector2(_get_view_width() - 150.0, 105.0)) <= 80.0:
 		is_night = not is_night
 		for cat in cats:
 			cat.is_night = is_night
@@ -308,9 +321,10 @@ func _handle_touch_point(pt: Vector2, is_drag: bool) -> void:
 
 func _spawn_bubble(start_y: float) -> void:
 	var bubble := SoapBubble.new()
-	bubble.position = Vector2(randf_range(120.0, VIEW_W - 120.0), start_y)
+	bubble.position = Vector2(randf_range(120.0, _get_view_width() - 120.0), start_y)
 	bubble.bubble_popped.connect(_on_bubble_popped)
 	bubbles_layer.add_child(bubble)
+
 
 
 func _on_bubble_popped(pos: Vector2, toy_type: int, toy_color: Color) -> void:
@@ -365,11 +379,13 @@ func _on_cat_sang(pos: Vector2, col: Color) -> void:
 
 
 func _draw() -> void:
+	var w := _get_view_width()
+
 	# 1. Небо (плавный переход День <-> Ночь)
 	var sky_top := Color("#74B9FF").lerp(Color("#192A56"), night_blend)
 	var sky_bot := Color("#A3DAFF").lerp(Color("#273C75"), night_blend)
-	draw_rect(Rect2(-200, -200, VIEW_W + 400, VIEW_H + 400), sky_top)
-	draw_rect(Rect2(-200, 240, VIEW_W + 400, VIEW_H), sky_bot)
+	draw_rect(Rect2(-300, -300, w + 600, VIEW_H + 600), sky_top)
+	draw_rect(Rect2(-300, 240, w + 600, VIEW_H + 200), sky_bot)
 
 	# 1.5 Звёздочки ночью
 	if night_blend > 0.02:
@@ -385,8 +401,8 @@ func _draw() -> void:
 				pts.append(spos + Vector2(cos(angle) * rad, sin(angle) * rad))
 			draw_colored_polygon(pts, scol)
 
-	# 2. Солнышко / Луна в углу (переключает День и Ночь!)
-	var sun_pos := Vector2(1130, 105)
+	# 2. Солнышко / Луна в углу (привязано к правому краю экрана)
+	var sun_pos := Vector2(w - 150.0, 105.0)
 	var sun_r := 54.0 + sin(world_time * 3.0) * 3.0 + sun_bounce * 16.0
 	draw_circle(sun_pos, sun_r + 18.0, Color(1.0, 0.92, 0.4, 0.28))
 
@@ -423,23 +439,23 @@ func _draw() -> void:
 		draw_circle(Vector2(cx - 30.0 * sc, cy + 8.0 * sc), 25.0 * sc, col)
 		draw_circle(Vector2(cx + 32.0 * sc, cy + 6.0 * sc), 27.0 * sc, col)
 
-	# 4. Зелёные холмы и полянка
+	# 4. Зелёные холмы и полянка на всю ширину
 	var hill1 := Color("#55EFC4").darkened(0.12).lerp(Color("#1E3799"), night_blend * 0.65)
 	var hill2 := Color("#00B894").lightened(0.12).lerp(Color("#0C2461"), night_blend * 0.65)
 	var lawn := Color("#58B19F").lerp(Color("#1B1464"), night_blend * 0.65)
-	draw_circle(Vector2(280, 920), 540.0, hill1)
-	draw_circle(Vector2(1020, 940), 580.0, hill2)
-	draw_rect(Rect2(-100, FENCE_Y - 10, VIEW_W + 200, 300), lawn)
+	draw_circle(Vector2(w * 0.22, 920), 540.0, hill1)
+	draw_circle(Vector2(w * 0.78, 940), 580.0, hill2)
+	draw_rect(Rect2(-200, FENCE_Y - 10, w + 400, 300), lawn)
 
 	# 5. Деревянный заборчик, на котором сидят котики
 	var fence_wood := Color("#E1B12C").lerp(Color("#8C7AE6"), night_blend * 0.45)
 	var fence_dark := Color("#C29216").lerp(Color("#40407A"), night_blend * 0.55)
-	# Горизонтальные перекладины
-	draw_rect(Rect2(-60, FENCE_Y + 25, VIEW_W + 120, 22), fence_dark)
-	draw_rect(Rect2(-60, FENCE_Y + 110, VIEW_W + 120, 22), fence_dark)
+	# Горизонтальные перекладины через весь экран
+	draw_rect(Rect2(-80, FENCE_Y + 25, w + 160, 22), fence_dark)
+	draw_rect(Rect2(-80, FENCE_Y + 110, w + 160, 22), fence_dark)
 
-	# Вертикальные дощечки забора
-	for x in range(-20, int(VIEW_W) + 80, 65):
+	# Вертикальные дощечки забора через всю ширину экрана
+	for x in range(-30, int(w) + 70, 65):
 		var px := float(x)
 		draw_rect(Rect2(px, FENCE_Y - 4, 46, 185), fence_wood)
 		var top_tri := PackedVector2Array([
@@ -448,6 +464,7 @@ func _draw() -> void:
 			Vector2(px + 46, FENCE_Y - 4)
 		])
 		draw_colored_polygon(top_tri, fence_wood)
+
 
 
 func _draw_falling_toys_and_fx() -> void:

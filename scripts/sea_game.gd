@@ -42,6 +42,7 @@ var _sea_ambient: AudioStreamPlayer
 
 
 func _ready() -> void:
+	DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR_LANDSCAPE)
 	randomize()
 	_init_audio()
 
@@ -150,6 +151,7 @@ func _setup_environment_and_camera() -> void:
 
 	_camera = Camera3D.new()
 	_camera.fov = 52.0
+	_camera.keep_aspect = Camera3D.KEEP_HEIGHT
 	_camera.look_at_from_position(_cam_pos, _cam_look, Vector3.UP)
 	add_child(_camera)
 
@@ -599,5 +601,3 @@ func _get_sun_button_pos() -> Vector2:
 	var vp := get_viewport()
 	var w: float = float(vp.get_visible_rect().size.x) if vp != null else 1280.0
 	return Vector2(w - 65.0, 62.0)
-
-
