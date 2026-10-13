@@ -8,7 +8,11 @@ const SEA_MAX_X := 16.5
 const SEA_MIN_Z := -13.5
 const SEA_MAX_Z := 6.5
 
-var islands: Array[Dictionary] = []
+class IslandData extends RefCounted:
+	var pos: Vector3
+	var radius: float
+
+var islands: Array[IslandData] = []
 var _floating_duck: Node3D
 var _duck_bounce: float = 0.0
 var _target_ring: MeshInstance3D
@@ -36,8 +40,8 @@ func push_out_of_islands(pt: Vector3, actor_radius: float) -> Vector3:
 	var res := Vector3(pt.x, 0.0, pt.z)
 	for _pass in range(2):
 		for isl in islands:
-			var ipos: Vector3 = isl["pos"]
-			var min_dist: float = float(isl["radius"]) + actor_radius
+			var ipos := isl.pos
+			var min_dist := isl.radius + actor_radius
 			var diff := res - ipos
 			diff.y = 0.0
 			var d := diff.length()
@@ -57,15 +61,15 @@ func is_valid_spawn(from_pt: Vector3, cand: Vector3, margin: float) -> bool:
 	var seg := p2 - p1
 	var seg_len_sq := seg.length_squared()
 	for isl in islands:
-		var ipos: Vector3 = isl["pos"]
+		var ipos := isl.pos
 		var center := Vector2(ipos.x, ipos.z)
-		var safe_r: float = float(isl["radius"]) + margin
+		var safe_r := isl.radius + margin
 		if p2.distance_to(center) < safe_r:
 			return false
 		if seg_len_sq > 0.01:
 			var t := clampf((center - p1).dot(seg) / seg_len_sq, 0.0, 1.0)
 			var closest := p1 + seg * t
-			if closest.distance_to(center) < float(isl["radius"]) + 0.85:
+			if closest.distance_to(center) < isl.radius + 0.85:
 				return false
 	return true
 
@@ -172,10 +176,10 @@ func _build_islands() -> void:
 
 
 func _create_island(pos: Vector3, radius: float, with_tower: bool) -> void:
-	islands.append({
-		"pos": Vector3(pos.x, 0.0, pos.z),
-		"radius": radius + 0.25
-	})
+	var isl_data := IslandData.new()
+	isl_data.pos = Vector3(pos.x, 0.0, pos.z)
+	isl_data.radius = radius + 0.25
+	islands.append(isl_data)
 
 	var isl := Node3D.new()
 	isl.position = pos
@@ -218,10 +222,10 @@ func _create_island(pos: Vector3, radius: float, with_tower: bool) -> void:
 		_instantiate_model("res://assets/models/chest.glb", isl, Vector3(-0.65, 0.52, 0.72), Vector3(0.0, 15.0, 0.0), Vector3.ONE * 0.85, true)
 		var boat_offset := Vector3(radius * 0.88, 0.06, radius * 0.42)
 		_instantiate_model("res://assets/models/boat-row-small.glb", isl, boat_offset, Vector3(0.0, 45.0, 0.0), Vector3.ONE * 0.90, true)
-		islands.append({
-			"pos": Vector3(pos.x + boat_offset.x, 0.0, pos.z + boat_offset.z),
-			"radius": 1.25
-		})
+		var boat_data := IslandData.new()
+		boat_data.pos = Vector3(pos.x + boat_offset.x, 0.0, pos.z + boat_offset.z)
+		boat_data.radius = 1.25
+		islands.append(boat_data)
 
 
 func _build_floating_duck() -> void:

@@ -3,8 +3,25 @@ extends Node3D
 
 signal boat_clicked(boat_pos: Vector3, boat_type: String)
 
-var boats: Array[Dictionary] = []
-var birds: Array[Dictionary] = []
+class BoatData extends RefCounted:
+	var node: Node3D
+	var x: float
+	var z: float
+	var dir: float
+	var speed: float
+	var type: String
+	var bounce: float = 0.0
+
+class BirdData extends RefCounted:
+	var node: Node3D
+	var x: float
+	var y: float
+	var z: float
+	var dir: float
+	var speed: float
+
+var boats: Array[BoatData] = []
+var birds: Array[BirdData] = []
 var clouds: Array[Node3D] = []
 var _kenney_colormap: Texture2D
 
@@ -38,45 +55,45 @@ func _build_boats() -> void:
 	liner.position = Vector3(-12.0, 0.0, -18.5)
 	add_child(liner)
 	_instantiate_model("res://assets/models/ship-ocean-liner.glb", liner, Vector3(0.0, -0.18, 0.0), Vector3(0.0, 90.0, 0.0), Vector3.ONE * 0.32, true)
-	boats.append({
-		"node": liner,
-		"x": -12.0,
-		"z": -18.5,
-		"dir": 1.0,
-		"speed": 1.4,
-		"type": "liner",
-		"bounce": 0.0
-	})
+	
+	var bd_liner := BoatData.new()
+	bd_liner.node = liner
+	bd_liner.x = -12.0
+	bd_liner.z = -18.5
+	bd_liner.dir = 1.0
+	bd_liner.speed = 1.4
+	bd_liner.type = "liner"
+	boats.append(bd_liner)
 
 	# Скоростной катер
 	var speedboat := Node3D.new()
 	speedboat.position = Vector3(12.0, 0.0, -15.5)
 	add_child(speedboat)
 	_instantiate_model("res://assets/models/boat-speed-a.glb", speedboat, Vector3(0.0, -0.08, 0.0), Vector3(0.0, -90.0, 0.0), Vector3.ONE * 0.65, true)
-	boats.append({
-		"node": speedboat,
-		"x": 12.0,
-		"z": -15.5,
-		"dir": -1.0,
-		"speed": 2.8,
-		"type": "speedboat",
-		"bounce": 0.0
-	})
+	
+	var bd_speed := BoatData.new()
+	bd_speed.node = speedboat
+	bd_speed.x = 12.0
+	bd_speed.z = -15.5
+	bd_speed.dir = -1.0
+	bd_speed.speed = 2.8
+	bd_speed.type = "speedboat"
+	boats.append(bd_speed)
 
 	# Буксирчик
 	var tug := Node3D.new()
 	tug.position = Vector3(-6.0, 0.0, -16.8)
 	add_child(tug)
 	_instantiate_model("res://assets/models/boat-tug-a.glb", tug, Vector3(0.0, -0.12, 0.0), Vector3(0.0, 90.0, 0.0), Vector3.ONE * 0.58, true)
-	boats.append({
-		"node": tug,
-		"x": -6.0,
-		"z": -16.8,
-		"dir": 1.0,
-		"speed": 1.8,
-		"type": "tug",
-		"bounce": 0.0
-	})
+	
+	var bd_tug := BoatData.new()
+	bd_tug.node = tug
+	bd_tug.x = -6.0
+	bd_tug.z = -16.8
+	bd_tug.dir = 1.0
+	bd_tug.speed = 1.8
+	bd_tug.type = "tug"
+	boats.append(bd_tug)
 
 
 func _build_birds() -> void:
@@ -84,22 +101,46 @@ func _build_birds() -> void:
 	flamingo.position = Vector3(-11.0, 4.8, -7.5)
 	add_child(flamingo)
 	var fl_inst := _instantiate_model("res://assets/models/Flamingo.glb", flamingo, Vector3.ZERO, Vector3(0.0, 90.0, 0.0), Vector3.ONE * 0.016)
-	_play_glb_anim(fl_inst, ["fly", "take"])
-	birds.append({"node": flamingo, "x": -11.0, "y": 4.8, "z": -7.5, "dir": 1.0, "speed": 2.8})
+	_play_glb_anim(fl_inst, [&"fly", &"take"])
+	
+	var br_fl := BirdData.new()
+	br_fl.node = flamingo
+	br_fl.x = -11.0
+	br_fl.y = 4.8
+	br_fl.z = -7.5
+	br_fl.dir = 1.0
+	br_fl.speed = 2.8
+	birds.append(br_fl)
 
 	var parrot := Node3D.new()
 	parrot.position = Vector3(11.0, 4.2, -6.0)
 	add_child(parrot)
 	var pr_inst := _instantiate_model("res://assets/models/Parrot.glb", parrot, Vector3.ZERO, Vector3(0.0, -90.0, 0.0), Vector3.ONE * 0.016)
-	_play_glb_anim(pr_inst, ["fly", "take"])
-	birds.append({"node": parrot, "x": 11.0, "y": 4.2, "z": -6.0, "dir": -1.0, "speed": 3.2})
+	_play_glb_anim(pr_inst, [&"fly", &"take"])
+	
+	var br_pr := BirdData.new()
+	br_pr.node = parrot
+	br_pr.x = 11.0
+	br_pr.y = 4.2
+	br_pr.z = -6.0
+	br_pr.dir = -1.0
+	br_pr.speed = 3.2
+	birds.append(br_pr)
 
 	var stork := Node3D.new()
 	stork.position = Vector3(0.0, 5.4, -9.5)
 	add_child(stork)
 	var st_inst := _instantiate_model("res://assets/models/Stork.glb", stork, Vector3.ZERO, Vector3(0.0, 90.0, 0.0), Vector3.ONE * 0.016)
-	_play_glb_anim(st_inst, ["storkFly_B_", "fly"])
-	birds.append({"node": stork, "x": 0.0, "y": 5.4, "z": -9.5, "dir": 1.0, "speed": 2.6})
+	_play_glb_anim(st_inst, [&"storkFly_B_", &"fly"])
+	
+	var br_st := BirdData.new()
+	br_st.node = stork
+	br_st.x = 0.0
+	br_st.y = 5.4
+	br_st.z = -9.5
+	br_st.dir = 1.0
+	br_st.speed = 2.6
+	birds.append(br_st)
 
 
 func update_fleet(delta: float, world_time: float, water_surface: WaterSurface) -> void:
@@ -112,53 +153,50 @@ func update_fleet(delta: float, world_time: float, water_surface: WaterSurface) 
 
 	# Корабли
 	for b in boats:
-		b["x"] += float(b["dir"]) * float(b["speed"]) * delta
-		if float(b["dir"]) > 0.0 and float(b["x"]) > 22.0:
-			b["x"] = -22.0
-		elif float(b["dir"]) < 0.0 and float(b["x"]) < -22.0:
-			b["x"] = 22.0
-		if float(b["bounce"]) > 0.0:
-			b["bounce"] = maxf(0.0, float(b["bounce"]) - delta * 2.5)
+		b.x += b.dir * b.speed * delta
+		if b.dir > 0.0 and b.x > 22.0:
+			b.x = -22.0
+		elif b.dir < 0.0 and b.x < -22.0:
+			b.x = 22.0
+		if b.bounce > 0.0:
+			b.bounce = maxf(0.0, b.bounce - delta * 2.5)
 
-		var bnode: Node3D = b["node"]
-		var bx: float = b["x"]
-		var bz: float = b["z"]
+		var bx := b.x
+		var bz := b.z
 		var wave_y: float = water_surface.get_wave_height(bx, bz, world_time) if water_surface else 0.0
-		bnode.position = Vector3(
+		b.node.position = Vector3(
 			bx,
-			wave_y + float(b["bounce"]) * 0.35,
+			wave_y + b.bounce * 0.35,
 			bz
 		)
-		bnode.rotation.z = sin(world_time * 2.6 + bx) * 0.07
+		b.node.rotation.z = sin(world_time * 2.6 + bx) * 0.07
 
 	# Птицы
 	for br in birds:
-		br["x"] += float(br["dir"]) * float(br["speed"]) * delta
-		if float(br["dir"]) > 0.0 and float(br["x"]) > 24.0:
-			br["x"] = -24.0
-		elif float(br["dir"]) < 0.0 and float(br["x"]) < -24.0:
-			br["x"] = 24.0
-		var br_node: Node3D = br["node"]
-		br_node.position = Vector3(
-			float(br["x"]),
-			float(br["y"]) + sin(world_time * 2.5 + float(br["x"])) * 0.25,
-			float(br["z"])
+		br.x += br.dir * br.speed * delta
+		if br.dir > 0.0 and br.x > 24.0:
+			br.x = -24.0
+		elif br.dir < 0.0 and br.x < -24.0:
+			br.x = 24.0
+		br.node.position = Vector3(
+			br.x,
+			br.y + sin(world_time * 2.5 + br.x) * 0.25,
+			br.z
 		)
 
 
 func check_touch(camera: Camera3D, screen_pt: Vector2) -> bool:
 	for b in boats:
-		var bnode: Node3D = b["node"]
-		if camera.is_position_in_frustum(bnode.global_position):
-			var b_screen := camera.unproject_position(bnode.global_position + Vector3(0, 0.5, 0))
+		if camera.is_position_in_frustum(b.node.global_position):
+			var b_screen := camera.unproject_position(b.node.global_position + Vector3(0.0, 0.5, 0.0))
 			if screen_pt.distance_to(b_screen) <= 85.0:
-				b["bounce"] = 1.0
-				boat_clicked.emit(bnode.global_position, b["type"])
+				b.bounce = 1.0
+				boat_clicked.emit(b.node.global_position, b.type)
 				return true
 	return false
 
 
-func _play_glb_anim(node: Node3D, preferred_names: Array[String]) -> AnimationPlayer:
+func _play_glb_anim(node: Node3D, preferred_names: Array[StringName]) -> AnimationPlayer:
 	if node == null:
 		return null
 	for child in node.find_children("*", "AnimationPlayer", true, false):
@@ -166,7 +204,7 @@ func _play_glb_anim(node: Node3D, preferred_names: Array[String]) -> AnimationPl
 		var list := ap.get_animation_list()
 		for pref in preferred_names:
 			for anim_name in list:
-				if anim_name.to_lower().contains(pref.to_lower()):
+				if StringName(anim_name.to_lower()) == pref or anim_name.to_lower().contains(String(pref).to_lower()):
 					var anim := ap.get_animation(anim_name)
 					if anim:
 						anim.loop_mode = Animation.LOOP_LINEAR

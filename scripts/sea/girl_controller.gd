@@ -21,7 +21,13 @@ var girl_bounce: float = 0.0
 var swim_to_dad: bool = false
 var _foam_cooldown: float = 0.0
 
-var water_jets: Array[Dictionary] = []
+class WaterJetData extends RefCounted:
+	var node: MeshInstance3D
+	var vel: Vector3 = Vector3.ZERO
+	var life: float = 0.0
+
+var _jet_pool: Array[MeshInstance3D] = []
+var _active_jets: Array[WaterJetData] = []
 var _sphere_mesh_small: SphereMesh
 
 var _girl_visual: Node3D
@@ -36,8 +42,18 @@ func init_controller() -> void:
 	_sphere_mesh_small = SphereMesh.new()
 	_sphere_mesh_small.radius = 0.13
 	_sphere_mesh_small.height = 0.26
-	_sphere_mesh_small.radial_segments = 14
-	_sphere_mesh_small.rings = 7
+	_sphere_mesh_small.radial_segments = 12
+	_sphere_mesh_small.rings = 6
+
+	var jet_mat := _make_unshaded_mat(Color("#48DBFB"))
+	for i in range(16):
+		var mi := MeshInstance3D.new()
+		mi.mesh = _sphere_mesh_small
+		mi.material_override = jet_mat
+		mi.visible = false
+		add_child(mi)
+		_jet_pool.append(mi)
+
 	_build_visuals()
 
 
@@ -72,18 +88,27 @@ func fire_water_jet() -> void:
 		var v := (forward + spread).normalized() * randf_range(6.5, 9.2)
 		v.y += randf_range(2.8, 4.4)
 
-		var mi := MeshInstance3D.new()
-		mi.mesh = _sphere_mesh_small
-		mi.material_override = _make_unshaded_mat(Color("#48DBFB"))
-		mi.position = nozzle_pos
-		mi.scale = Vector3.ONE * randf_range(0.8, 1.3)
-		add_child(mi)
+		var mi: MeshInstance3D = null
+		for item in _jet_pool:
+			if not item.visible:
+				mi = item
+				break
 
-		water_jets.append({
-			"node": mi,
-			"vel": v,
-			"life": 0.95
-		})
+		if mi == null and _active_jets.size() > 0:
+			var oldest: WaterJetData = _active_jets[0]
+			mi = oldest.node
+			_active_jets.remove_at(0)
+
+		if mi != null:
+			mi.position = nozzle_pos
+			mi.scale = Vector3.ONE * randf_range(0.8, 1.3)
+			mi.visible = true
+
+			var data := WaterJetData.new()
+			data.node = mi
+			data.vel = v
+			data.life = 0.95
+			_active_jets.append(data)
 
 	water_sprayed.emit(nozzle_pos, forward)
 
@@ -116,8 +141,8 @@ func update_controller(delta: float, world_time: float, water_surface: WaterSurf
 		var dir := to_target / dist
 		if water_surface != null:
 			for isl in water_surface.islands:
-				var ipos: Vector3 = isl["pos"]
-				var safe_r: float = float(isl["radius"]) + 1.60
+				var ipos := isl.pos
+				var safe_r := isl.radius + 1.60
 				var to_isl := ipos - girl_pos
 				to_isl.y = 0.0
 				var d_isl := to_isl.length()
@@ -161,10 +186,10 @@ func update_controller(delta: float, world_time: float, water_surface: WaterSurf
 		girl_pos = water_surface.push_out_of_islands(girl_pos, 1.45)
 		if girl_pos.distance_to(prev_pos) > 0.0005:
 			for isl in water_surface.islands:
-				var ipos: Vector3 = isl["pos"]
+				var ipos := isl.pos
 				var away := girl_pos - ipos
 				away.y = 0.0
-				if away.length() <= float(isl["radius"]) + 1.50 and away.length() > 0.001:
+				if away.length() <= isl.radius + 1.50 and away.length() > 0.001:
 					var n_out := away.normalized()
 					var vn := girl_vel.dot(n_out)
 					if vn < 0.0:
@@ -188,21 +213,22 @@ func update_controller(delta: float, world_time: float, water_surface: WaterSurf
 
 
 func _update_water_jets(delta: float, dad_pos: Vector3, is_dad_waiting: bool) -> void:
-	for i in range(water_jets.size() - 1, -1, -1):
-		var jet: Dictionary = water_jets[i]
-		jet["life"] -= delta
-		var pnode: MeshInstance3D = jet["node"]
-		if jet["life"] <= 0.0:
-			pnode.queue_free()
-			water_jets.remove_at(i)
+	for i in range(_active_jets.size() - 1, -1, -1):
+		var jet: WaterJetData = _active_jets[i]
+		jet.life -= delta
+		var pnode: MeshInstance3D = jet.node
+		if jet.life <= 0.0:
+			pnode.visible = false
+			_active_jets.remove_at(i)
 		else:
-			jet["vel"].y -= 11.0 * delta
-			pnode.position += jet["vel"] * delta
+			jet.vel.y -= 11.0 * delta
+			pnode.position += jet.vel * delta
 			if is_dad_waiting and pnode.position.distance_to(dad_pos) <= 2.2:
-				pnode.queue_free()
-				water_jets.remove_at(i)
+				pnode.visible = false
+				_active_jets.remove_at(i)
 				water_hit_dad.emit()
 				break
+
 
 
 func _build_visuals() -> void:

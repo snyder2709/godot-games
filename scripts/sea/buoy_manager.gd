@@ -4,52 +4,56 @@ extends Node3D
 signal buoy_hit(buoy_pos: Vector3, normal: Vector3)
 signal buoy_clicked(buoy_pos: Vector3)
 
-var buoys: Array[Dictionary] = []
+class BuoyData extends RefCounted:
+	var node: Node3D
+	var pos: Vector3
+	var wobble: Vector2 = Vector2.ZERO
+	var wobble_vel: Vector2 = Vector2.ZERO
+	var radius: float = 0.95
+	var hit_cooldown: float = 0.0
+
+var buoys: Array[BuoyData] = []
 var _kenney_colormap: Texture2D
 
 
 func init_buoys(colormap: Texture2D) -> void:
 	_kenney_colormap = colormap
-	var buoy_positions = [
+	var buoy_configs = [
 		{"pos": Vector3(4.5, 0.0, -4.5), "sc": 0.58},
 		{"pos": Vector3(-5.2, 0.0, -3.8), "sc": 0.55},
 		{"pos": Vector3(1.8, 0.0, -8.0), "sc": 0.55},
 		{"pos": Vector3(-7.5, 0.0, 0.6), "sc": 0.58}
 	]
-	for b in buoy_positions:
+	for cfg in buoy_configs:
 		var bnode := Node3D.new()
-		bnode.position = b["pos"]
+		bnode.position = cfg["pos"]
 		add_child(bnode)
-		_instantiate_model("res://assets/models/buoy.glb", bnode, Vector3(0.0, -0.22, 0.0), Vector3.ZERO, Vector3.ONE * b["sc"], true)
-		buoys.append({
-			"node": bnode,
-			"pos": b["pos"],
-			"wobble": Vector2.ZERO,
-			"wobble_vel": Vector2.ZERO,
-			"radius": 0.95,
-			"hit_cooldown": 0.0
-		})
+		_instantiate_model("res://assets/models/buoy.glb", bnode, Vector3(0.0, -0.22, 0.0), Vector3.ZERO, Vector3.ONE * cfg["sc"], true)
+		
+		var data := BuoyData.new()
+		data.node = bnode
+		data.pos = cfg["pos"]
+		data.radius = 0.95
+		buoys.append(data)
 
 
 func update_buoys(delta: float, world_time: float, water_surface: WaterSurface) -> void:
 	for b in buoys:
-		var cd: float = float(b.get("hit_cooldown", 0.0))
-		if cd > 0.0:
-			b["hit_cooldown"] = maxf(0.0, cd - delta)
+		if b.hit_cooldown > 0.0:
+			b.hit_cooldown = maxf(0.0, b.hit_cooldown - delta)
 
-		var bnode: Node3D = b["node"]
-		var bpos: Vector3 = b["pos"]
+		var bpos := b.pos
 		var wave_y: float = water_surface.get_wave_height(bpos.x, bpos.z, world_time) if water_surface else 0.0
 
-		var wob: Vector2 = b["wobble"]
-		var wob_vel: Vector2 = b["wobble_vel"]
+		var wob := b.wobble
+		var wob_vel := b.wobble_vel
 		wob_vel += -wob * 22.0 * delta - wob_vel * 4.2 * delta
 		wob += wob_vel * delta
-		b["wobble"] = wob
-		b["wobble_vel"] = wob_vel
+		b.wobble = wob
+		b.wobble_vel = wob_vel
 
-		bnode.position = Vector3(bpos.x, wave_y, bpos.z)
-		bnode.rotation_degrees = Vector3(
+		b.node.position = Vector3(bpos.x, wave_y, bpos.z)
+		b.node.rotation_degrees = Vector3(
 			wob.x + sin(world_time * 2.8 + bpos.x) * 6.0,
 			0.0,
 			wob.y + cos(world_time * 2.4 + bpos.z) * 6.0
@@ -58,11 +62,11 @@ func update_buoys(delta: float, world_time: float, water_surface: WaterSurface) 
 
 func check_girl_collision(girl_pos: Vector3, girl_vel: Vector3) -> Dictionary:
 	for b in buoys:
-		var bpos: Vector3 = b["pos"]
+		var bpos := b.pos
 		var to_girl := girl_pos - bpos
 		to_girl.y = 0.0
 		var d := to_girl.length()
-		var min_dist := float(b["radius"]) + 1.10
+		var min_dist := b.radius + 1.10
 		if d < min_dist and d > 0.01:
 			var n := to_girl / d
 			var vn := girl_vel.dot(n)
@@ -73,12 +77,12 @@ func check_girl_collision(girl_pos: Vector3, girl_vel: Vector3) -> Dictionary:
 
 			var new_pos := bpos + n * (min_dist + 0.28)
 			var new_vel := n * 4.8
-			b["wobble_vel"] += Vector2(-n.z, n.x) * 45.0
+			b.wobble_vel += Vector2(-n.z, n.x) * 45.0
 
-			var cd: float = float(b.get("hit_cooldown", 0.0))
-			b["hit_cooldown"] = 0.45
+			var was_on_cooldown := b.hit_cooldown > 0.0
+			b.hit_cooldown = 0.45
 
-			if cd <= 0.0:
+			if not was_on_cooldown:
 				buoy_hit.emit(bpos, n)
 
 			return {
@@ -93,12 +97,11 @@ func check_girl_collision(girl_pos: Vector3, girl_vel: Vector3) -> Dictionary:
 
 func check_touch(camera: Camera3D, screen_pt: Vector2) -> bool:
 	for b in buoys:
-		var bnode: Node3D = b["node"]
-		if camera.is_position_in_frustum(bnode.global_position):
-			var b_screen := camera.unproject_position(bnode.global_position + Vector3(0, 0.3, 0))
+		if camera.is_position_in_frustum(b.node.global_position):
+			var b_screen := camera.unproject_position(b.node.global_position + Vector3(0.0, 0.3, 0.0))
 			if screen_pt.distance_to(b_screen) <= 75.0:
-				b["wobble_vel"] += Vector2(randf_range(-35, 35), randf_range(-35, 35))
-				buoy_clicked.emit(bnode.global_position)
+				b.wobble_vel += Vector2(randf_range(-35.0, 35.0), randf_range(-35.0, 35.0))
+				buoy_clicked.emit(b.node.global_position)
 				return true
 	return false
 
