@@ -1152,8 +1152,14 @@ func _update_buoys_physics(delta: float) -> void:
 			_boing_player.pitch_scale = randf_range(1.0, 1.2)
 			_boing_player.play()
 			Input.vibrate_handheld(35)
-
 			_spawn_splash_3d(bpos + n * 0.8, 10, Color("#E3F9FF"))
+
+			# Сбрасываем цель движения, чтобы не долбиться о буёк в бесконечном цикле
+			girl_target = girl_pos
+			swim_to_dad = false
+			if _target_ring != null:
+				_target_ring_timer = 0.0
+				_target_ring.visible = false
 
 
 func _update_dad_3d(delta: float) -> void:

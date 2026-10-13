@@ -43,6 +43,8 @@ static func get_squeak_stream() -> AudioStream:
 
 
 static func get_laugh_stream() -> AudioStream:
+	if ResourceLoader.exists("res://assets/baby_laugh.ogg"):
+		return load("res://assets/baby_laugh.ogg")
 	if ResourceLoader.exists("res://assets/laugh.wav"):
 		return load("res://assets/laugh.wav")
 	return get_toy_stream()
