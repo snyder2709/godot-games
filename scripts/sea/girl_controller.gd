@@ -55,7 +55,7 @@ func stop_navigation() -> void:
 func bounce_back(new_pos: Vector3, new_vel: Vector3) -> void:
 	girl_pos = new_pos
 	girl_vel = new_vel
-	girl_target = new_pos
+	girl_target = new_pos + new_vel.normalized() * 0.85
 	swim_to_dad = false
 	girl_bounce = 1.0
 
@@ -137,7 +137,6 @@ func update_controller(delta: float, world_time: float, water_surface: WaterSurf
 		var max_spd := 7.6 if swim_to_dad else 6.2
 		var speed := clampf(dist * 2.8, 2.6, max_spd)
 		girl_vel = girl_vel.lerp(dir * speed, delta * 6.0)
-		girl_pos += girl_vel * delta
 
 		if _wheel_pivot != null:
 			_wheel_pivot.rotation.y = clampf(yaw_diff * 1.6, -1.2, 1.2) + wheel_angle
@@ -147,9 +146,14 @@ func update_controller(delta: float, world_time: float, water_surface: WaterSurf
 			_foam_cooldown = 0.16
 			foam_spawned.emit(girl_pos - dir * 0.95 + Vector3(randf_range(-0.25, 0.25), 0.08, randf_range(-0.25, 0.25)))
 	else:
-		girl_vel = girl_vel.lerp(Vector3.ZERO, delta * 6.0)
+		girl_vel = girl_vel.lerp(Vector3.ZERO, delta * 5.0)
 		if _wheel_pivot != null:
 			_wheel_pivot.rotation.y = wheel_angle
+
+	# Применяем физическую скорость к позиции девочки в любом состоянии
+	girl_pos += girl_vel * delta
+	girl_pos.x = clampf(girl_pos.x, SEA_MIN_X, SEA_MAX_X)
+	girl_pos.z = clampf(girl_pos.z, SEA_MIN_Z, SEA_MAX_Z)
 
 	# Коллизия с островами
 	if water_surface != null:

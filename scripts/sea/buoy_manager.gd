@@ -26,12 +26,17 @@ func init_buoys(colormap: Texture2D) -> void:
 			"pos": b["pos"],
 			"wobble": Vector2.ZERO,
 			"wobble_vel": Vector2.ZERO,
-			"radius": 0.95
+			"radius": 0.95,
+			"hit_cooldown": 0.0
 		})
 
 
 func update_buoys(delta: float, world_time: float, water_surface: WaterSurface) -> void:
 	for b in buoys:
+		var cd: float = float(b.get("hit_cooldown", 0.0))
+		if cd > 0.0:
+			b["hit_cooldown"] = maxf(0.0, cd - delta)
+
 		var bnode: Node3D = b["node"]
 		var bpos: Vector3 = b["pos"]
 		var wave_y: float = water_surface.get_wave_height(bpos.x, bpos.z, world_time) if water_surface else 0.0
@@ -60,10 +65,22 @@ func check_girl_collision(girl_pos: Vector3, girl_vel: Vector3) -> Dictionary:
 		var min_dist := float(b["radius"]) + 1.10
 		if d < min_dist and d > 0.01:
 			var n := to_girl / d
-			var new_pos := bpos + n * min_dist
-			var new_vel := girl_vel.bounce(n) * 0.65 + n * 4.2
+			var vn := girl_vel.dot(n)
+
+			# Если девочка уже отплывает от буйка, не вызываем повторный удар
+			if vn > 0.8 and d >= min_dist - 0.08:
+				continue
+
+			var new_pos := bpos + n * (min_dist + 0.28)
+			var new_vel := n * 4.8
 			b["wobble_vel"] += Vector2(-n.z, n.x) * 45.0
-			buoy_hit.emit(bpos, n)
+
+			var cd: float = float(b.get("hit_cooldown", 0.0))
+			b["hit_cooldown"] = 0.45
+
+			if cd <= 0.0:
+				buoy_hit.emit(bpos, n)
+
 			return {
 				"collided": true,
 				"new_pos": new_pos,
