@@ -47,7 +47,8 @@ var _toy_player: AudioStreamPlayer
 
 
 func _ready() -> void:
-	DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR_LANDSCAPE)
+	if OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios"):
+		DisplayServer.screen_set_orientation(DisplayServer.SCREEN_SENSOR_LANDSCAPE)
 	randomize()
 
 	_pop_player = AudioStreamPlayer.new()
