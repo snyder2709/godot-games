@@ -227,7 +227,6 @@ func _create_island(pos: Vector3, radius: float, with_tower: bool) -> void:
 	_instantiate_model("res://assets/models/rocks-sand-a.glb", isl, Vector3(radius * 0.35, 0.22, radius * 0.22), Vector3(0.0, 120.0, 0.0), Vector3.ONE * 0.42, true)
 
 	if with_tower:
-		_instantiate_model("res://assets/models/tower-complete-small.glb", isl, Vector3(0.12, 0.52, -0.15), Vector3(0.0, 25.0, 0.0), Vector3.ONE * 0.65, true)
 		_instantiate_model("res://assets/models/chest.glb", isl, Vector3(-0.65, 0.52, 0.72), Vector3(0.0, 15.0, 0.0), Vector3.ONE * 0.85, true)
 		var boat_offset := Vector3(radius * 0.88, 0.06, radius * 0.42)
 		_instantiate_model("res://assets/models/boat-row-small.glb", isl, boat_offset, Vector3(0.0, 45.0, 0.0), Vector3.ONE * 0.90, true)

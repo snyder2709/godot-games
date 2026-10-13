@@ -9,7 +9,7 @@ class BuoyData extends RefCounted:
 	var pos: Vector3
 	var wobble: Vector2 = Vector2.ZERO
 	var wobble_vel: Vector2 = Vector2.ZERO
-	var radius: float = 0.95
+	var radius: float = 0.40
 	var hit_cooldown: float = 0.0
 
 var buoys: Array[BuoyData] = []
@@ -18,22 +18,22 @@ var _kenney_colormap: Texture2D
 
 func init_buoys(colormap: Texture2D) -> void:
 	_kenney_colormap = colormap
+	# 3 буйка расставлены широко по периметру открытой воды (между каждым препятствием от 7 до 12 метров свободного прохода)
 	var buoy_configs = [
-		{"pos": Vector3(4.5, 0.0, -4.5), "sc": 0.58},
-		{"pos": Vector3(-5.2, 0.0, -3.8), "sc": 0.55},
-		{"pos": Vector3(1.8, 0.0, -8.0), "sc": 0.55},
-		{"pos": Vector3(-7.5, 0.0, 0.6), "sc": 0.58}
+		{"pos": Vector3(-6.2, 0.0, -1.8), "sc": 0.48},
+		{"pos": Vector3(6.2, 0.0, -1.8), "sc": 0.48},
+		{"pos": Vector3(0.0, 0.0, -6.5), "sc": 0.48}
 	]
 	for cfg in buoy_configs:
 		var bnode := Node3D.new()
 		bnode.position = cfg["pos"]
 		add_child(bnode)
-		_instantiate_model("res://assets/models/buoy.glb", bnode, Vector3(0.0, -0.22, 0.0), Vector3.ZERO, Vector3.ONE * cfg["sc"], true)
+		_instantiate_model("res://assets/models/buoy.glb", bnode, Vector3(0.0, -0.18, 0.0), Vector3.ZERO, Vector3.ONE * cfg["sc"], true)
 		
 		var data := BuoyData.new()
 		data.node = bnode
 		data.pos = cfg["pos"]
-		data.radius = 0.95
+		data.radius = 0.40
 		buoys.append(data)
 
 
@@ -62,28 +62,27 @@ func update_buoys(delta: float, world_time: float, water_surface: WaterSurface) 
 		b.node.scale = Vector3(1.0 + wob_mag, 1.0 - wob_mag * 0.6, 1.0 + wob_mag)
 
 
-
 func check_girl_collision(girl_pos: Vector3, girl_vel: Vector3) -> Dictionary:
 	for b in buoys:
 		var bpos := b.pos
 		var to_girl := girl_pos - bpos
 		to_girl.y = 0.0
 		var d := to_girl.length()
-		var min_dist := b.radius + 1.10
+		var min_dist := b.radius + 0.65
 		if d < min_dist and d > 0.01:
 			var n := to_girl / d
 			var vn := girl_vel.dot(n)
 
-			# Если девочка уже отплывает от буйка, не вызываем повторный удар
-			if vn > 0.8 and d >= min_dist - 0.08:
+			# Если лодочка уже отплывает от буйка, не зацикливаем отскок
+			if vn > 0.4 and d >= min_dist - 0.06:
 				continue
 
-			var new_pos := bpos + n * (min_dist + 0.28)
-			var new_vel := n * 4.8
-			b.wobble_vel += Vector2(-n.z, n.x) * 45.0
+			var new_pos := bpos + n * (min_dist + 0.12)
+			var new_vel := n * 2.8
+			b.wobble_vel += Vector2(-n.z, n.x) * 35.0
 
 			var was_on_cooldown := b.hit_cooldown > 0.0
-			b.hit_cooldown = 0.45
+			b.hit_cooldown = 0.40
 
 			if not was_on_cooldown:
 				buoy_hit.emit(bpos, n)
@@ -101,9 +100,9 @@ func check_girl_collision(girl_pos: Vector3, girl_vel: Vector3) -> Dictionary:
 func check_touch(camera: Camera3D, screen_pt: Vector2) -> bool:
 	for b in buoys:
 		if camera.is_position_in_frustum(b.node.global_position):
-			var b_screen := camera.unproject_position(b.node.global_position + Vector3(0.0, 0.3, 0.0))
+			var b_screen := camera.unproject_position(b.node.global_position + Vector3(0.0, 0.25, 0.0))
 			if screen_pt.distance_to(b_screen) <= 75.0:
-				b.wobble_vel += Vector2(randf_range(-35.0, 35.0), randf_range(-35.0, 35.0))
+				b.wobble_vel += Vector2(randf_range(-30.0, 30.0), randf_range(-30.0, 30.0))
 				buoy_clicked.emit(b.node.global_position)
 				return true
 	return false

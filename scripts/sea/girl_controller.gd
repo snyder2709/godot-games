@@ -125,7 +125,7 @@ func check_touch(camera: Camera3D, screen_pt: Vector2) -> bool:
 	return false
 
 
-func update_controller(delta: float, world_time: float, water_surface: WaterSurface, dad_pos: Vector3, is_dad_waiting: bool, beach_ball: BeachBall = null) -> void:
+func update_controller(delta: float, world_time: float, water_surface: WaterSurface, dad_pos: Vector3, is_dad_waiting: bool, beach_ball: BeachBall = null, buoy_manager: BuoyManager = null) -> void:
 
 	if wheel_spin_boost > 0.0:
 		wheel_spin_boost = maxf(0.0, wheel_spin_boost - delta * 2.2)
@@ -157,6 +157,22 @@ func update_controller(delta: float, world_time: float, water_surface: WaterSurf
 						var tang2 := Vector3(n_isl.z, 0.0, -n_isl.x)
 						var best_tang := tang1 if tang1.dot(dir) >= tang2.dot(dir) else tang2
 						dir = (dir - n_isl * into + best_tang * 0.65).normalized()
+
+		if buoy_manager != null:
+			for b in buoy_manager.buoys:
+				var bpos := b.pos
+				var safe_r := b.radius + 0.85
+				var to_b := bpos - girl_pos
+				to_b.y = 0.0
+				var d_b := to_b.length()
+				if d_b < safe_r + 1.2 and d_b > 0.01:
+					var n_b := to_b / d_b
+					var into_b := dir.dot(n_b)
+					if into_b > 0.0:
+						var tang1 := Vector3(-n_b.z, 0.0, n_b.x)
+						var tang2 := Vector3(n_b.z, 0.0, -n_b.x)
+						var best_tang := tang1 if tang1.dot(dir) >= tang2.dot(dir) else tang2
+						dir = (dir - n_b * into_b + best_tang * 0.70).normalized()
 
 		var target_yaw := atan2(dir.x, dir.z)
 		var yaw_diff := wrapf(target_yaw - girl_yaw, -PI, PI)

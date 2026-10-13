@@ -16,16 +16,18 @@ var _clam_is_open := false
 var _starfish: Node3D
 var _starfish_bounce: float = 0.0
 
-# 3. Маяк и световой луч
+# 3. Настоящий морской маяк с полосатой башней и световым лучом
+var _lighthouse_root: Node3D
 var _lantern_beam: Node3D
 var _lantern_light: OmniLight3D
+var _lighthouse_bounce: float = 0.0
 var _is_night_mode := false
 
 
 func init_treasures() -> void:
 	_build_clam()
 	_build_starfish()
-	_build_lighthouse_beam()
+	_build_lighthouse()
 
 
 func _build_clam() -> void:
@@ -122,16 +124,94 @@ func _build_starfish() -> void:
 	_starfish.add_child(e2)
 
 
-func _build_lighthouse_beam() -> void:
-	_lantern_beam = Node3D.new()
-	_lantern_beam.position = Vector3(-10.68, 2.55, -6.65)
-	add_child(_lantern_beam)
+func _build_lighthouse() -> void:
+	_lighthouse_root = Node3D.new()
+	_lighthouse_root.position = Vector3(-10.68, 0.45, -6.65)
+	add_child(_lighthouse_root)
 
-	# Световой конус луча маяка
+	var stone_mat := _make_mat(Color("#57606F"), 0.45)
+	var white_mat := _make_mat(Color("#F1F2F6"), 0.35)
+	var red_mat := _make_mat(Color("#FF4757"), 0.35)
+	var dark_mat := _make_mat(Color("#2F3542"), 0.40)
+
+	# 1. Круглый каменный фундамент
+	_add_cylinder(_lighthouse_root, 0.76, 0.76, 0.28, stone_mat, Vector3(0.0, 0.14, 0.0))
+
+	# 2. Полосатый корпус башни (4 конические секции: белая, красная, белая, красная)
+	_add_cylinder(_lighthouse_root, 0.58, 0.68, 0.60, white_mat, Vector3(0.0, 0.58, 0.0))
+	_add_cylinder(_lighthouse_root, 0.48, 0.58, 0.60, red_mat, Vector3(0.0, 1.18, 0.0))
+	_add_cylinder(_lighthouse_root, 0.38, 0.48, 0.60, white_mat, Vector3(0.0, 1.78, 0.0))
+	_add_cylinder(_lighthouse_root, 0.32, 0.38, 0.42, red_mat, Vector3(0.0, 2.29, 0.0))
+
+	# 3. Смотровая площадка (балкон и ограждение)
+	_add_cylinder(_lighthouse_root, 0.52, 0.52, 0.08, dark_mat, Vector3(0.0, 2.54, 0.0))
+	var rail_mesh := TorusMesh.new()
+	rail_mesh.inner_radius = 0.46
+	rail_mesh.outer_radius = 0.52
+	var rmi := MeshInstance3D.new()
+	rmi.mesh = rail_mesh
+	rmi.material_override = dark_mat
+	rmi.position = Vector3(0.0, 2.64, 0.0)
+	_lighthouse_root.add_child(rmi)
+
+	# 4. Фонарное помещение (стеклянная кабина)
+	var glass_mat := StandardMaterial3D.new()
+	glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glass_mat.albedo_color = Color(1.0, 0.95, 0.7, 0.45)
+	_add_cylinder(_lighthouse_root, 0.28, 0.28, 0.50, glass_mat, Vector3(0.0, 2.82, 0.0))
+
+	# Внутренняя светящаяся лампа
+	var lamp_mesh := SphereMesh.new()
+	lamp_mesh.radius = 0.14
+	lamp_mesh.height = 0.28
+	var lamp_mat := StandardMaterial3D.new()
+	lamp_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	lamp_mat.albedo_color = Color("#FFF9E6")
+	var lmi := MeshInstance3D.new()
+	lmi.mesh = lamp_mesh
+	lmi.material_override = lamp_mat
+	lmi.position = Vector3(0.0, 2.82, 0.0)
+	_lighthouse_root.add_child(lmi)
+
+	# Источник света фонаря
+	_lantern_light = OmniLight3D.new()
+	_lantern_light.position = Vector3(0.0, 2.82, 0.0)
+	_lantern_light.omni_range = 9.0
+	_lantern_light.light_color = Color("#FFF9E6")
+	_lantern_light.light_energy = 0.5
+	_lighthouse_root.add_child(_lantern_light)
+
+	# 5. Конический купол крыши и шпиль
+	var roof_mesh := CylinderMesh.new()
+	roof_mesh.top_radius = 0.0
+	roof_mesh.bottom_radius = 0.38
+	roof_mesh.height = 0.40
+	var rfmi := MeshInstance3D.new()
+	rfmi.mesh = roof_mesh
+	rfmi.material_override = red_mat
+	rfmi.position = Vector3(0.0, 3.25, 0.0)
+	_lighthouse_root.add_child(rfmi)
+
+	var spire_mesh := SphereMesh.new()
+	spire_mesh.radius = 0.07
+	spire_mesh.height = 0.14
+	var spire_mat := _make_mat(Color("#FFD32A"), 0.2)
+	var spmi := MeshInstance3D.new()
+	spmi.mesh = spire_mesh
+	spmi.material_override = spire_mat
+	spmi.position = Vector3(0.0, 3.48, 0.0)
+	_lighthouse_root.add_child(spmi)
+
+	# 6. Вращающийся луч света
+	_lantern_beam = Node3D.new()
+	_lantern_beam.position = Vector3(0.0, 2.82, 0.0)
+	_lighthouse_root.add_child(_lantern_beam)
+
 	var beam_mesh := CylinderMesh.new()
 	beam_mesh.top_radius = 0.15
 	beam_mesh.bottom_radius = 1.85
-	beam_mesh.height = 8.5
+	beam_mesh.height = 9.0
 	var beam_mat := StandardMaterial3D.new()
 	beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	beam_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -141,22 +221,48 @@ func _build_lighthouse_beam() -> void:
 	var bmi := MeshInstance3D.new()
 	bmi.mesh = beam_mesh
 	bmi.material_override = beam_mat
-	bmi.position = Vector3(0.0, 0.0, 4.25)
+	bmi.position = Vector3(0.0, 0.0, 4.5)
 	bmi.rotation_degrees.x = 90.0
 	_lantern_beam.add_child(bmi)
 
 
+func _add_cylinder(parent: Node3D, top_r: float, bot_r: float, h: float, mat: Material, pos: Vector3) -> MeshInstance3D:
+	var cm := CylinderMesh.new()
+	cm.top_radius = top_r
+	cm.bottom_radius = bot_r
+	cm.height = h
+	cm.radial_segments = 18
+	var mi := MeshInstance3D.new()
+	mi.mesh = cm
+	mi.material_override = mat
+	mi.position = pos
+	parent.add_child(mi)
+	return mi
+
+
 func set_night_mode(is_night: bool) -> void:
 	_is_night_mode = is_night
-	if _lantern_beam:
+	if _lantern_beam and _lantern_beam.get_child_count() > 0:
 		var mi: MeshInstance3D = _lantern_beam.get_child(0) as MeshInstance3D
 		if mi and mi.material_override is StandardMaterial3D:
 			var mat := mi.material_override as StandardMaterial3D
-			mat.albedo_color.a = 0.45 if is_night else 0.15
+			mat.albedo_color.a = 0.50 if is_night else 0.16
+	if _lantern_light:
+		_lantern_light.light_energy = 1.35 if is_night else 0.45
 
 
 func update_treasures(delta: float, world_time: float) -> void:
-	# 1. Вращение луча маяка
+	# 1. Вращение луча маяка и реакция на тап
+	if _lighthouse_bounce > 0.0:
+		_lighthouse_bounce = maxf(0.0, _lighthouse_bounce - delta * 3.5)
+		var progress := 1.0 - _lighthouse_bounce
+		var sy := 1.0 + sin(progress * PI) * 0.25
+		var sxz := 1.0 - sin(progress * PI) * 0.12
+		if _lighthouse_root:
+			_lighthouse_root.scale = Vector3(sxz, sy, sxz)
+	elif _lighthouse_root != null:
+		_lighthouse_root.scale = Vector3.ONE
+
 	if _lantern_beam:
 		_lantern_beam.rotation.y += delta * (1.8 if _is_night_mode else 1.1)
 
@@ -197,10 +303,11 @@ func update_treasures(delta: float, world_time: float) -> void:
 
 func check_touch(camera: Camera3D, screen_pt: Vector2) -> bool:
 	# Проверка тапа по маяку
-	if _lantern_beam and camera.is_position_in_frustum(_lantern_beam.global_position):
-		var tower_screen := camera.unproject_position(_lantern_beam.global_position)
-		if screen_pt.distance_to(tower_screen) <= 75.0:
-			lighthouse_clicked.emit(_lantern_beam.global_position)
+	if _lighthouse_root and camera.is_position_in_frustum(_lighthouse_root.global_position):
+		var tower_screen := camera.unproject_position(_lighthouse_root.global_position + Vector3(0.0, 1.8, 0.0))
+		if screen_pt.distance_to(tower_screen) <= 85.0:
+			_lighthouse_bounce = 1.0
+			lighthouse_clicked.emit(_lighthouse_root.global_position + Vector3(0.0, 3.2, 0.0))
 			return true
 
 	# Проверка тапа по ракушке
@@ -230,4 +337,3 @@ func _make_mat(col: Color, roughness: float = 0.3) -> StandardMaterial3D:
 	mat.roughness = roughness
 	mat.albedo_color = col
 	return mat
-

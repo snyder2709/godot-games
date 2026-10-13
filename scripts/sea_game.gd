@@ -80,8 +80,8 @@ func _setup_modules() -> void:
 	add_child(_fauna)
 	_fauna.init_fauna(_kenney_colormap)
 	_fauna.crab_clicked.connect(_on_crab_clicked)
-	_fauna.fish_jumped.connect(_on_fish_jumped)
-	_fauna.fish_clicked.connect(_on_fish_clicked)
+	_fauna.dolphin_jumped.connect(_on_dolphin_jumped)
+	_fauna.dolphin_clicked.connect(_on_dolphin_clicked)
 
 	_dad = DadActor.new()
 	add_child(_dad)
@@ -218,7 +218,7 @@ func _process(delta: float) -> void:
 	_beach_ball.update_ball(delta, world_time, _water_surface, _dad.get_pos(), _dad.is_waiting())
 	_beach_ball.check_girl_collision(_girl.girl_pos, _girl.girl_vel)
 
-	_girl.update_controller(delta, world_time, _water_surface, _dad.get_pos(), _dad.is_waiting(), _beach_ball)
+	_girl.update_controller(delta, world_time, _water_surface, _dad.get_pos(), _dad.is_waiting(), _beach_ball, _buoy_manager)
 
 
 	# Купание Папы при сближении девочки вплотную
@@ -272,18 +272,18 @@ func _on_crab_clicked(crab_pos: Vector3) -> void:
 	_fx_pool.spawn_ripple(crab_pos, 0.2, 1.3, Color(1.0, 1.0, 1.0, 0.6), 0.4)
 
 
-func _on_fish_jumped(fish_pos: Vector3) -> void:
+func _on_dolphin_jumped(dolphin_pos: Vector3) -> void:
 	_splash_player.pitch_scale = randf_range(1.15, 1.35)
 	_splash_player.play()
-	_fx_pool.spawn_splash(fish_pos, 8, Color("#81D4FA"))
-	_fx_pool.spawn_ripple(fish_pos, 0.25, 1.5, Color(1.0, 1.0, 1.0, 0.7), 0.45)
+	_fx_pool.spawn_splash(dolphin_pos, 10, Color("#E3FAFC"))
+	_fx_pool.spawn_ripple(dolphin_pos, 0.28, 1.6, Color(1.0, 1.0, 1.0, 0.75), 0.45)
 
 
-func _on_fish_clicked(fish_pos: Vector3) -> void:
-	_splash_player.pitch_scale = 1.30
-	_splash_player.play()
-	_fx_pool.spawn_splash(fish_pos, 10, Color("#81D4FA"))
-	_fx_pool.spawn_ripple(fish_pos, 0.3, 1.6, Color(1.0, 1.0, 1.0, 0.7), 0.45)
+func _on_dolphin_clicked(dolphin_pos: Vector3) -> void:
+	_slide_player.pitch_scale = randf_range(1.2, 1.4)
+	_slide_player.play()
+	_fx_pool.spawn_splash(dolphin_pos, 12, Color("#48DBFB"))
+	_fx_pool.spawn_sparkles(dolphin_pos, 12, Color("#FFD32A"))
 
 
 func _on_boat_clicked(boat_pos: Vector3, boat_type: String) -> void:

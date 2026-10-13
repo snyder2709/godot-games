@@ -2,34 +2,35 @@ class_name MarineFauna
 extends Node3D
 
 signal crab_clicked(crab_pos: Vector3)
-signal fish_clicked(fish_pos: Vector3)
-signal fish_jumped(fish_pos: Vector3)
+signal dolphin_clicked(pos: Vector3)
+signal dolphin_jumped(pos: Vector3)
 
 const SEA_MIN_X := -16.5
 const SEA_MAX_X := 16.5
 const SEA_MIN_Z := -13.5
 const SEA_MAX_Z := 6.5
 
-class FishData extends RefCounted:
+class DolphinData extends RefCounted:
 	var node: Node3D
-	var pos: Vector3
-	var dir: Vector3
-	var speed: float
-	var anim: AnimationPlayer
-	var jump_t: float = 0.0
+	var start_pos: Vector3
+	var end_pos: Vector3
+	var t: float = 1.0
+	var active: bool = false
+	var delay: float = 0.0
+	var spin: float = 0.0
 
 var _island_crab: Node3D
 var _crab_anim: AnimationPlayer
 var _crab_bounce: float = 0.0
 
-var fishes: Array[FishData] = []
+var dolphins: Array[DolphinData] = []
 var _kenney_colormap: Texture2D
 
 
 func init_fauna(colormap: Texture2D) -> void:
 	_kenney_colormap = colormap
 	_build_island_crab()
-	_build_fish_schools()
+	_build_dolphins()
 
 
 func _build_island_crab() -> void:
@@ -40,29 +41,70 @@ func _build_island_crab() -> void:
 	_crab_anim = _play_glb_anim(crab_inst, [&"idle", &"walk"])
 
 
-func _build_fish_schools() -> void:
-	var fish_spawns = [
-		{"pos": Vector3(-4.5, 0.0, -1.0), "dir": Vector3(1.0, 0.0, 0.2).normalized(), "speed": 1.4},
-		{"pos": Vector3(5.2, 0.0, -1.5), "dir": Vector3(-1.0, 0.0, -0.1).normalized(), "speed": 1.6},
-		{"pos": Vector3(0.5, 0.0, -5.5), "dir": Vector3(0.4, 0.0, 1.0).normalized(), "speed": 1.5}
-	]
-	for sp in fish_spawns:
-		var fnode := Node3D.new()
-		fnode.position = sp["pos"]
-		add_child(fnode)
-		var finst := _instantiate_model("res://assets/models/animal-fish.glb", fnode, Vector3.ZERO, Vector3.ZERO, Vector3.ONE * 0.32, true)
-		var anim := _play_glb_anim(finst, [&"run", &"walk", &"idle"])
-		
-		var fd := FishData.new()
-		fd.node = fnode
-		fd.pos = sp["pos"]
-		fd.dir = sp["dir"]
-		fd.speed = sp["speed"]
-		fd.anim = anim
-		fishes.append(fd)
+func _build_dolphins() -> void:
+	# Создаём двух красивых дельфинов, прыгающих поочерёдно
+	for i in range(2):
+		var dnode := Node3D.new()
+		dnode.visible = false
+		add_child(dnode)
+		_build_dolphin_mesh(dnode)
+
+		var dd := DolphinData.new()
+		dd.node = dnode
+		dd.delay = 1.2 + float(i) * 2.8
+		dd.active = false
+		dolphins.append(dd)
 
 
-func update_fauna(delta: float, world_time: float, water_surface: WaterSurface, girl_pos: Vector3) -> void:
+func _build_dolphin_mesh(parent: Node3D) -> void:
+	var body_mat := _make_mat(Color("#22A6B3"), 0.20)
+	var belly_mat := _make_mat(Color("#E3FAFC"), 0.25)
+	var fin_mat := _make_mat(Color("#0984E3"), 0.22)
+	var eye_mat := StandardMaterial3D.new()
+	eye_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	eye_mat.albedo_color = Color("#2D3436")
+
+	# Тело
+	var body := CapsuleMesh.new()
+	body.radius = 0.32
+	body.height = 1.60
+	body.radial_segments = 18
+	_add_mesh(parent, body, body_mat, Vector3.ZERO, Vector3(90.0, 0.0, 0.0))
+	_add_mesh(parent, body, belly_mat, Vector3(0.0, -0.07, 0.0), Vector3(90.0, 0.0, 0.0), Vector3(0.82, 0.85, 0.92))
+
+	# Носик
+	var snout := CapsuleMesh.new()
+	snout.radius = 0.13
+	snout.height = 0.56
+	_add_mesh(parent, snout, body_mat, Vector3(0.0, -0.03, 0.80), Vector3(90.0, 0.0, 0.0))
+
+	# Спинной плавник
+	var fin := PrismMesh.new()
+	fin.size = Vector3(0.10, 0.46, 0.48)
+	_add_mesh(parent, fin, fin_mat, Vector3(0.0, 0.38, -0.08))
+
+	# Боковые плавники
+	var pfin := PrismMesh.new()
+	pfin.size = Vector3(0.08, 0.36, 0.32)
+	_add_mesh(parent, pfin, fin_mat, Vector3(-0.30, -0.08, 0.22), Vector3(15.0, 0.0, -45.0))
+	_add_mesh(parent, pfin, fin_mat, Vector3(0.30, -0.08, 0.22), Vector3(15.0, 0.0, 45.0))
+
+	# Хвост и хвостовые лопасти
+	var tail := CapsuleMesh.new()
+	tail.radius = 0.11
+	tail.height = 0.78
+	_add_mesh(parent, tail, fin_mat, Vector3(0.0, 0.0, -0.84), Vector3(0.0, 0.0, 90.0), Vector3(0.32, 1.0, 1.15))
+
+	# Глазки
+	var eye_mesh := SphereMesh.new()
+	eye_mesh.radius = 0.032
+	eye_mesh.height = 0.064
+	_add_mesh(parent, eye_mesh, eye_mat, Vector3(-0.16, 0.08, 0.52))
+	_add_mesh(parent, eye_mesh, eye_mat, Vector3(0.16, 0.08, 0.52))
+
+
+func update_fauna(delta: float, world_time: float, water_surface: WaterSurface, _girl_pos: Vector3) -> void:
+	# Анимация прыжка крабика
 	if _crab_bounce > 0.0:
 		_crab_bounce = maxf(0.0, _crab_bounce - delta * 3.5)
 	if _island_crab != null:
@@ -71,37 +113,66 @@ func update_fauna(delta: float, world_time: float, water_surface: WaterSurface, 
 		var crab_sxz := 0.45 * (1.0 - sin(_crab_bounce * PI) * 0.25)
 		_island_crab.scale = Vector3(crab_sxz, crab_sy, crab_sxz)
 
+	# Обновление прыжков дельфинов
+	for d in dolphins:
+		if not d.active:
+			d.delay -= delta
+			if d.delay <= 0.0:
+				_start_dolphin_jump(d, water_surface)
+			continue
 
-	for f in fishes:
-		var fpos := f.pos
-		var fdir := f.dir
-		fpos += fdir * f.speed * delta
+		var prev_t := d.t
+		d.t += delta * 0.74
 
-		if fpos.x < SEA_MIN_X + 2.0 or fpos.x > SEA_MAX_X - 2.0:
-			fdir.x = -fdir.x
-		if fpos.z < SEA_MIN_Z + 2.0 or fpos.z > SEA_MAX_Z - 2.0:
-			fdir.z = -fdir.z
+		if prev_t < 0.06 and d.t >= 0.06:
+			dolphin_jumped.emit(d.start_pos)
 
-		f.dir = fdir
-		f.pos = fpos
-
-		var wave_y: float = water_surface.get_wave_height(fpos.x, fpos.z, world_time) if water_surface else 0.0
-		if f.jump_t > 0.0:
-			f.jump_t = maxf(0.0, f.jump_t - delta * 1.8)
-			f.node.position = Vector3(fpos.x, wave_y + sin(f.jump_t * PI) * 1.25, fpos.z)
-			f.node.rotation.x = (f.jump_t - 0.5) * 1.8
+		if d.t >= 1.0:
+			dolphin_jumped.emit(d.end_pos)
+			d.active = false
+			d.node.visible = false
+			d.delay = randf_range(3.2, 5.8)
 		else:
-			f.node.position = Vector3(fpos.x, wave_y - 0.06, fpos.z)
-			f.node.rotation.x = 0.0
+			var s := d.start_pos
+			var e := d.end_pos
+			var pos := s.lerp(e, d.t)
+			pos.y = sin(d.t * PI) * 2.85 - 0.25
+			d.node.position = pos
 
-		f.node.rotation.y = atan2(fdir.x, fdir.z)
+			var jump_dir := (e - s).normalized()
+			d.node.rotation.y = atan2(jump_dir.x, jump_dir.z)
+			d.node.rotation.x = (d.t - 0.5) * 1.65
 
-		if girl_pos.distance_to(fpos) < 2.5 and f.jump_t <= 0.0:
-			f.jump_t = 1.0
-			fish_jumped.emit(fpos)
+			if d.spin > 0.0:
+				d.spin = maxf(0.0, d.spin - delta * 1.6)
+				d.node.rotation.z += delta * 14.0
+			else:
+				d.node.rotation.z = 0.0
+
+
+func _start_dolphin_jump(d: DolphinData, water_surface: WaterSurface) -> void:
+	var from_left := randf() < 0.5
+	var sx := randf_range(-8.5, -3.0) if from_left else randf_range(3.0, 8.5)
+	var sz := randf_range(-7.5, 0.5)
+	var s := Vector3(sx, 0.0, sz)
+	var jump_len := randf_range(5.2, 6.8)
+	var e := s + Vector3(jump_len if from_left else -jump_len, 0.0, randf_range(-1.2, 1.2))
+
+	if water_surface != null:
+		s = water_surface.push_out_of_islands(s, 2.0)
+		e = water_surface.push_out_of_islands(e, 2.0)
+
+	d.start_pos = s
+	d.end_pos = e
+	d.t = 0.0
+	d.spin = 0.0
+	d.active = true
+	d.node.visible = true
+	d.node.position = s
 
 
 func check_touch(camera: Camera3D, screen_pt: Vector2) -> bool:
+	# Тап по крабику
 	if _island_crab != null and camera.is_position_in_frustum(_island_crab.global_position):
 		var crab_screen := camera.unproject_position(_island_crab.global_position + Vector3(0.0, 0.3, 0.0))
 		if screen_pt.distance_to(crab_screen) <= 75.0:
@@ -111,17 +182,36 @@ func check_touch(camera: Camera3D, screen_pt: Vector2) -> bool:
 			crab_clicked.emit(_island_crab.global_position)
 			return true
 
-	for f in fishes:
-		if camera.is_position_in_frustum(f.node.global_position):
-			var f_screen := camera.unproject_position(f.node.global_position)
-			if screen_pt.distance_to(f_screen) <= 75.0:
-				f.jump_t = 1.0
-				if f.anim != null and f.anim.has_animation(&"dance"):
-					f.anim.play(&"dance")
-				fish_clicked.emit(f.node.global_position)
+	# Тап по прыгающим дельфинам в воздухе
+	for d in dolphins:
+		if d.active and camera.is_position_in_frustum(d.node.global_position):
+			var d_screen := camera.unproject_position(d.node.global_position)
+			if screen_pt.distance_to(d_screen) <= 85.0:
+				d.spin = 1.0
+				dolphin_clicked.emit(d.node.global_position)
 				return true
 
 	return false
+
+
+func _make_mat(col: Color, roughness: float = 0.3) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	mat.specular_mode = BaseMaterial3D.SPECULAR_TOON
+	mat.roughness = roughness
+	mat.albedo_color = col
+	return mat
+
+
+func _add_mesh(parent: Node3D, mesh: Mesh, mat: Material, pos := Vector3.ZERO, rot_deg := Vector3.ZERO, sc := Vector3.ONE) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	mi.position = pos
+	mi.rotation_degrees = rot_deg
+	mi.scale = sc
+	parent.add_child(mi)
+	return mi
 
 
 func _play_glb_anim(node: Node3D, preferred_names: Array[StringName]) -> AnimationPlayer:
