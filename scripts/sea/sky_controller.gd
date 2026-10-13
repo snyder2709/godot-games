@@ -111,3 +111,4 @@ func _apply_palette(pal: Dictionary, instant: bool) -> void:
 		var sm: ShaderMaterial = _water_surface.get_material()
 		_transition_tween.tween_method(func(c: Color): sm.set_shader_parameter("shallow_color", c), sm.get_shader_parameter("shallow_color"), pal["water_shallow"], 1.1)
 		_transition_tween.tween_method(func(c: Color): sm.set_shader_parameter("deep_color", c), sm.get_shader_parameter("deep_color"), pal["water_deep"], 1.1)
+

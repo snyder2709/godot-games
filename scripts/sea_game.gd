@@ -475,9 +475,9 @@ func _handle_screen_touch(screen_pt: Vector2, is_drag: bool) -> void:
 		return
 
 	# 1.2. Кнопка смены времени суток "Солнышко / Луна"
-	var vp_width := get_viewport().size.x if get_viewport() else 1280.0
-	var sb := Vector2(vp_width - 65, 62)
+	var sb := _get_sun_button_pos()
 	if not is_drag and screen_pt.distance_to(sb) <= 45.0:
+
 		if _sky_controller:
 			_sky_controller.cycle_time()
 			_bell_player.pitch_scale = randf_range(1.15, 1.35)
@@ -572,10 +572,10 @@ func _draw_ui_overlay() -> void:
 	_ui_canvas.draw_rect(Rect2(hb.x - 5, hb.y + 6, 10, 12), Color("#FFF9E6"))
 
 	# 2. Кнопка "Солнышко / Закат / Луна"
-	var vp_width := get_viewport().size.x if get_viewport() else 1280.0
-	var sb := Vector2(vp_width - 65, 62)
+	var sb := _get_sun_button_pos()
 	_ui_canvas.draw_circle(sb, 36.0, Color(1, 1, 1, 0.94))
 	_ui_canvas.draw_arc(sb, 36.0, 0, TAU, 28, Color("#FFA502"), 4.0, true)
+
 
 	if _sky_controller and _sky_controller.current_time == SkyController.TimeOfDay.DAY:
 		_ui_canvas.draw_circle(sb, 16.0, Color("#FFD32A"))
@@ -593,4 +593,11 @@ func _draw_ui_overlay() -> void:
 		_ui_canvas.draw_circle(sb + Vector2(5, -4), 14.0, Color(1, 1, 1, 0.94))
 		_ui_canvas.draw_circle(sb + Vector2(14, 5), 2.8, Color("#F39C12"))
 		_ui_canvas.draw_circle(sb + Vector2(9, -12), 2.2, Color("#F39C12"))
+
+
+func _get_sun_button_pos() -> Vector2:
+	var vp := get_viewport()
+	var w: float = float(vp.get_visible_rect().size.x) if vp != null else 1280.0
+	return Vector2(w - 65.0, 62.0)
+
 

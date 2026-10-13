@@ -230,3 +230,4 @@ func _make_mat(col: Color, roughness: float = 0.3) -> StandardMaterial3D:
 	mat.roughness = roughness
 	mat.albedo_color = col
 	return mat
+
