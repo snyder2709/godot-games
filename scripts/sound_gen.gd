@@ -68,6 +68,20 @@ static func get_glug_stream() -> AudioStream:
 	return get_pop_stream()
 
 
+static func get_piano_stream() -> AudioStream:
+	if ResourceLoader.exists("res://assets/piano.wav"):
+		return load("res://assets/piano.wav")
+	return _generate_synth_piano()
+
+
+static func get_bell_stream() -> AudioStream:
+	return get_toy_stream()
+
+
+static func get_quack_stream() -> AudioStream:
+	return get_squeak_stream()
+
+
 ## Процедурный синтез певучего кошачьего "Мя-а-у" (формантная огибающая)
 static func _generate_synth_meow() -> AudioStreamWAV:
 	var duration := 0.42
@@ -210,4 +224,80 @@ static func _generate_synth_purr() -> AudioStreamWAV:
 	stream.stereo = false
 	stream.data = bytes
 	return stream
+
+
+## Процедурный синтез звонкого кристального пианино (C4 = 261.63 Гц)
+static func _generate_synth_piano() -> AudioStreamWAV:
+	var duration := 1.20
+	var samples := int(MIX_RATE * duration)
+	var bytes := PackedByteArray()
+	bytes.resize(samples * 2)
+
+	var f0 := 261.63
+	var p1 := 0.0
+	var p2 := 0.0
+	var p3 := 0.0
+	var p4 := 0.0
+
+	for i in range(samples):
+		var t := float(i) / float(samples)
+		var sec := t * duration
+		p1 += TAU * f0 / MIX_RATE
+		p2 += TAU * (f0 * 2.0) / MIX_RATE
+		p3 += TAU * (f0 * 3.0) / MIX_RATE
+		p4 += TAU * (f0 * 4.0) / MIX_RATE
+
+		# Перкуссивная атака (0.012 с) и натуральный экспоненциальный спад
+		var attack := clampf(sec / 0.012, 0.0, 1.0)
+		var decay1 := exp(-2.4 * sec)
+		var decay2 := exp(-3.8 * sec)
+		var decay3 := exp(-5.2 * sec)
+		var decay4 := exp(-7.0 * sec)
+
+		var raw := (
+			sin(p1) * 0.55 * decay1
+			+ sin(p2) * 0.28 * decay2
+			+ sin(p3) * 0.14 * decay3
+			+ sin(p4) * 0.07 * decay4
+		) * attack
+
+		var sample := clampf(raw * 0.85, -1.0, 1.0)
+		var pcm := int(sample * 32767.0)
+		bytes[i * 2] = pcm & 0xFF
+		bytes[i * 2 + 1] = (pcm >> 8) & 0xFF
+
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = MIX_RATE
+	stream.stereo = false
+	stream.data = bytes
+	return stream
+
+
+## Процедурный синтез смешного звука резиновой уточки
+static func _generate_synth_quack() -> AudioStreamWAV:
+	var duration := 0.26
+	var samples := int(MIX_RATE * duration)
+	var bytes := PackedByteArray()
+	bytes.resize(samples * 2)
+
+	var phase := 0.0
+	for i in range(samples):
+		var t := float(i) / float(samples)
+		var freq := 320.0 + sin(t * PI * 1.5) * 140.0 + sin(t * 32.0) * 25.0
+		phase += TAU * freq / MIX_RATE
+		var env := sin(t * PI) * (1.0 - t * 0.4)
+		var raw := (sin(phase) + sin(phase * 2.0) * 0.4) * 0.65
+		var sample := clampf(raw * env, -1.0, 1.0)
+		var pcm := int(sample * 32767.0)
+		bytes[i * 2] = pcm & 0xFF
+		bytes[i * 2 + 1] = (pcm >> 8) & 0xFF
+
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = MIX_RATE
+	stream.stereo = false
+	stream.data = bytes
+	return stream
+
 
