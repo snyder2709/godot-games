@@ -209,8 +209,8 @@ func _build_lighthouse() -> void:
 	_lighthouse_root.add_child(_lantern_beam)
 
 	var beam_mesh := CylinderMesh.new()
-	beam_mesh.top_radius = 0.15
-	beam_mesh.bottom_radius = 1.85
+	beam_mesh.top_radius = 2.20
+	beam_mesh.bottom_radius = 0.12
 	beam_mesh.height = 9.0
 	var beam_mat := StandardMaterial3D.new()
 	beam_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
