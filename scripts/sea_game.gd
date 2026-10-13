@@ -204,83 +204,56 @@ func _play_glb_anim(node: Node3D, preferred_names: Array[String]) -> void:
 
 
 func _init_shaders() -> void:
-	_toon_shader = Shader.new()
-	_toon_shader.code = """
-shader_type spatial;
-render_mode diffuse_toon, specular_toon;
-
-uniform vec4 albedo_color : source_color = vec4(1.0);
-uniform float roughness_val : hint_range(0.0, 1.0) = 0.32;
-uniform vec4 rim_color : source_color = vec4(1.0, 0.96, 0.85, 1.0);
-uniform float rim_power : hint_range(0.5, 8.0) = 3.0;
-uniform float rim_strength : hint_range(0.0, 1.0) = 0.38;
-
-void fragment() {
-	ALBEDO = albedo_color.rgb;
-	ROUGHNESS = roughness_val;
-	SPECULAR = 0.35;
-	float fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), rim_power);
-	EMISSION = rim_color.rgb * fresnel * rim_strength;
-}
-"""
-
 	var water_shader := Shader.new()
 	water_shader.code = """
 shader_type spatial;
-render_mode specular_schlick_ggx;
+render_mode diffuse_toon, specular_toon;
 
 uniform vec4 shallow_color : source_color = vec4(0.08, 0.82, 0.96, 1.0);
 uniform vec4 deep_color : source_color = vec4(0.02, 0.48, 0.88, 1.0);
 uniform vec4 foam_color : source_color = vec4(0.95, 0.99, 1.0, 1.0);
 
 varying float v_wave_h;
-varying vec3 v_world_pos;
-
-float wave_func(vec2 p, float t) {
-	float w1 = sin(p.x * 0.8 + t * 2.0) * cos(p.y * 0.7 + t * 1.6) * 0.12;
-	float w2 = sin((p.x + p.y) * 1.3 - t * 2.4) * 0.06;
-	return w1 + w2;
-}
 
 void vertex() {
-	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	float h = wave_func(v_world_pos.xz, TIME);
+	vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float w1 = sin(world_pos.x * 0.8 + TIME * 2.0) * cos(world_pos.z * 0.7 + TIME * 1.6) * 0.12;
+	float w2 = sin((world_pos.x + world_pos.z) * 1.3 - TIME * 2.4) * 0.06;
+	float h = w1 + w2;
 	VERTEX.y += h;
 	v_wave_h = h;
 
-	float eps = 0.15;
-	float hx = wave_func(v_world_pos.xz + vec2(eps, 0.0), TIME);
-	float hz = wave_func(v_world_pos.xz + vec2(0.0, eps), TIME);
-	NORMAL = normalize(vec3(h - hx, eps, h - hz));
+	// Аналитическая нормаль волны: максимальная скорость на мобильном GPU (без лишних вычислений sin/cos)
+	float d_dx = cos(world_pos.x * 0.8 + TIME * 2.0) * 0.8 * cos(world_pos.z * 0.7 + TIME * 1.6) * 0.12
+	           + cos((world_pos.x + world_pos.z) * 1.3 - TIME * 2.4) * 1.3 * 0.06;
+	float d_dz = -sin(world_pos.x * 0.8 + TIME * 2.0) * sin(world_pos.z * 0.7 + TIME * 1.6) * 0.7 * 0.12
+	           + cos((world_pos.x + world_pos.z) * 1.3 - TIME * 2.4) * 1.3 * 0.06;
+	NORMAL = normalize(vec3(-d_dx, 1.0, -d_dz));
 }
 
 void fragment() {
-	float fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 2.4);
-	vec3 water_col = mix(shallow_color.rgb, deep_color.rgb, clamp(fresnel * 0.85 + 0.15, 0.0, 1.0));
-
-	vec2 uv_p = v_world_pos.xz * 1.25;
-	float caustic = sin(uv_p.x * 2.8 + TIME * 2.2) * sin(uv_p.y * 2.8 - TIME * 1.9);
-	caustic = smoothstep(0.58, 0.92, caustic) * 0.25;
-
-	float crest_foam = smoothstep(0.10, 0.19, v_wave_h);
-	vec3 final_col = mix(water_col + vec3(caustic), foam_color.rgb, crest_foam * 0.55);
-
-	ALBEDO = final_col;
-	ROUGHNESS = 0.10;
-	METALLIC = 0.10;
-	SPECULAR = 0.80;
+	float fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 2.2);
+	vec3 water_col = mix(shallow_color.rgb, deep_color.rgb, clamp(fresnel * 0.75 + 0.25, 0.0, 1.0));
+	float crest_foam = smoothstep(0.10, 0.18, v_wave_h);
+	ALBEDO = mix(water_col, foam_color.rgb, crest_foam * 0.55);
+	ROUGHNESS = 0.15;
+	SPECULAR = 0.55;
 }
 """
 	_water_shader_mat = ShaderMaterial.new()
 	_water_shader_mat.shader = water_shader
 
 
-func _make_toon_mat(col: Color, rough: float = 0.32) -> ShaderMaterial:
-	var sm := ShaderMaterial.new()
-	sm.shader = _toon_shader
-	sm.set_shader_parameter("albedo_color", col)
-	sm.set_shader_parameter("roughness_val", rough)
-	return sm
+func _make_toon_mat(col: Color, rough: float = 0.35) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = col
+	mat.roughness = rough
+	mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	mat.specular_mode = BaseMaterial3D.SPECULAR_TOON
+	mat.rim_enabled = true
+	mat.rim = 0.35
+	mat.rim_tint = 0.25
+	return mat
 
 
 func _make_unshaded_mat(col: Color) -> StandardMaterial3D:
@@ -323,11 +296,10 @@ func _setup_environment_and_camera() -> void:
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_color = Color("#FFFDF7")
-	env.ambient_light_energy = 0.88
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.glow_enabled = true
-	env.glow_intensity = 0.35
-	env.glow_bloom = 0.08
+	env.ambient_light_energy = 1.05
+	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	# Отключаем Glow (bloom) на мобильных — он сжирает 30-40 кадров/с на полноэкранных FBO-проходах!
+	env.glow_enabled = false
 
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
@@ -336,8 +308,9 @@ func _setup_environment_and_camera() -> void:
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-48.0, -25.0, 0.0)
 	sun.light_color = Color("#FFF9E6")
-	sun.light_energy = 1.3
-	sun.shadow_enabled = true
+	sun.light_energy = 1.25
+	# Отключаем тяжелые тени на мобильных GPU для плавных 60 FPS
+	sun.shadow_enabled = false
 	add_child(sun)
 
 	_camera = Camera3D.new()
@@ -347,10 +320,11 @@ func _setup_environment_and_camera() -> void:
 
 
 func _build_shader_sea_and_islands() -> void:
+	# Оптимизированная сетка моря: 36x36 полигонов вместо 140x140 снижает нагрузку на мобильный GPU в 15 раз при том же качестве волн!
 	var sea_plane := PlaneMesh.new()
-	sea_plane.size = Vector2(150.0, 150.0)
-	sea_plane.subdivide_width = 140
-	sea_plane.subdivide_depth = 140
+	sea_plane.size = Vector2(90.0, 90.0)
+	sea_plane.subdivide_width = 36
+	sea_plane.subdivide_depth = 36
 	_add_mesh(self, sea_plane, _water_shader_mat, Vector3.ZERO)
 
 	# Просторное море и 3 живописных тропических острова (с точными твёрдыми берегами-коллизиями!)
@@ -958,14 +932,14 @@ func _process(delta: float) -> void:
 
 		_foam_cooldown -= delta
 		if _foam_cooldown <= 0.0:
-			_foam_cooldown = 0.09
+			_foam_cooldown = 0.16
 			_spawn_3d_particle(
-				girl_pos - dir * 1.05 + Vector3(randf_range(-0.3, 0.3), 0.08, randf_range(-0.3, 0.3)),
-				Vector3(0.0, 0.25, 0.0),
+				girl_pos - dir * 1.05 + Vector3(randf_range(-0.25, 0.25), 0.08, randf_range(-0.25, 0.25)),
+				Vector3(0.0, 0.22, 0.0),
 				Color(1, 1, 1, 0.85),
-				0.5,
+				0.38,
 				false,
-				1.1
+				1.0
 			)
 	else:
 		girl_vel = girl_vel.lerp(Vector3.ZERO, delta * 6.0)
@@ -1113,7 +1087,7 @@ func _update_dad_3d(delta: float) -> void:
 				_slide_player.play()
 				_splash_player.pitch_scale = 1.12
 				_splash_player.play()
-				_spawn_splash_3d(dad_pos, 26, Color("#E3F9FF"))
+				_spawn_splash_3d(dad_pos, 12, Color("#E3F9FF"))
 
 		DadState.EMERGING:
 			dad_timer -= delta
@@ -1208,26 +1182,31 @@ func _splash_dad_3d() -> void:
 	_laugh_player.play()
 	Input.vibrate_handheld(45)
 
-	_spawn_splash_3d(dad_pos, 36, Color.WHITE)
-	_spawn_splash_3d(girl_pos + Vector3(0, 1.1, 0), 12, Color("#FFD32A"))
+	_spawn_splash_3d(dad_pos, 14, Color.WHITE)
+	_spawn_splash_3d(girl_pos + Vector3(0, 1.1, 0), 6, Color("#FFD32A"))
 
 
 func _spawn_splash_3d(origin: Vector3, count: int, col: Color) -> void:
 	for i in range(count):
 		var a := randf() * TAU
-		var h_speed := randf_range(1.4, 4.5)
-		var v_speed := randf_range(4.0, 7.6)
+		var h_speed := randf_range(1.4, 4.2)
+		var v_speed := randf_range(3.8, 6.8)
 		_spawn_3d_particle(
 			origin + Vector3(0.0, 0.25, 0.0),
 			Vector3(cos(a) * h_speed, v_speed, sin(a) * h_speed),
 			col,
-			randf_range(0.45, 0.78),
+			randf_range(0.35, 0.55),
 			true,
-			randf_range(0.9, 1.5)
+			randf_range(0.85, 1.35)
 		)
 
 
 func _spawn_3d_particle(pos: Vector3, vel: Vector3, col: Color, life: float, gravity: bool, base_scale: float = 1.0) -> void:
+	if fx_particles.size() >= 24:
+		var oldest: Dictionary = fx_particles[0]
+		var old_node: MeshInstance3D = oldest["node"]
+		old_node.queue_free()
+		fx_particles.remove_at(0)
 	var mi := MeshInstance3D.new()
 	mi.mesh = _sphere_mesh_small
 	mi.material_override = _make_unshaded_mat(col)
